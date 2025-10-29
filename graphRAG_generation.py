@@ -1,7 +1,7 @@
 from langchain_community.graphs import Neo4jGraph
 from langchain_openai import ChatOpenAI
-from langchain.prompts.prompt import PromptTemplate
-from langchain.chains import GraphCypherQAChain
+from langchain_core.prompts import PromptTemplate
+from langchain_community.chains.graph_qa.cypher import GraphCypherQAChain
 from neo4j_env import graph
 import textwrap
 
@@ -49,6 +49,7 @@ class GraphRAG:
             graph=graph,
             verbose=True,
             cypher_prompt=self.cypher_prompt,
+            allow_dangerous_requests=True,
         )
 
     def generate_cypher_query(self, question: str) -> str:

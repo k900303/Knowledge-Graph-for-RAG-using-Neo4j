@@ -17,7 +17,7 @@ def query_graph_or_vector_rag(use_graph: bool, question: str) -> str:
 
 
 # query
-question = "Who was leading the Battle of Waterloo?"
+question = "who are those 2 persons involved"
 
 # Use GraphRAG -> True
 # Use VectorRAG -> False

@@ -1,0 +1,250 @@
+param_id,parameter_name,parameter_type,cid,unit,isprimary
+5652,"Total revenue, Primary",sd,18315,1,1
+5658,"Revenue per share, Primary",sd,18315,1,1
+5856,Other after-tax items,sd,18315,1,0
+716477,Total revenue - Capital goods,opssd,18315,1,0
+719494,"Operating income/(loss), YoY - Capital goods",opssd,18315,2,0
+719644,"EBITDA, Sequential growth - Capital goods",opssd,18315,2,0
+719492,"Operating income/(loss), Sequential growth - Capital goods",opssd,18315,2,0
+719488,Operating income/(loss) - Capital goods,opssd,18315,1,0
+716478,"Total revenue, Sequential growth - Capital goods",opssd,18315,2,0
+719495,Incremental margin - Capital goods,opssd,18315,2,0
+719645,"EBITDA, YoY - Capital goods",opssd,18315,2,0
+719490,Operating margin - Capital goods,opssd,18315,2,0
+719642,EBITDA - Capital goods,opssd,18315,1,0
+719643,EBITDA margin - Capital goods,opssd,18315,2,0
+716479,"Total revenue, YoY - Capital goods",opssd,18315,2,0
+259939,"Total revenue, YoY - Sanitary and systems",opssd,18315,2,0
+300075,Operating margin - Building products,opssd,18315,2,0
+259903,"Total revenue, Sequential growth - Sanitary and systems",opssd,18315,2,0
+263341,Total revenue - Flooring & ceiling systems,opssd,18315,1,0
+300100,Gross margin - Building products,opssd,18315,2,0
+300095,"EBITDA, Sequential growth - Building products",opssd,18315,2,0
+300098,Gross profit/(loss) - Building products,opssd,18315,1,0
+263368,"Total revenue, YoY - Flooring & ceiling systems",opssd,18315,2,0
+3084,Production Units/Volume,opssd,18315,6,0
+300096,"EBITDA, YoY - Building products",opssd,18315,2,0
+263346,"Total revenue, Sequential growth - Flooring & ceiling systems",opssd,18315,2,0
+300088,Total revenue - Building products,opssd,18315,1,0
+300085,"Total revenue, YoY - Building products",opssd,18315,2,0
+300084,"Operating income/(loss), Sequential growth - Building products",opssd,18315,2,0
+300097,"Gross profit/(loss), YoY - Building products",opssd,18315,2,0
+300099,EBITDA margin - Building products,opssd,18315,2,0
+300081,"Operating income/(loss), YoY - Building products",opssd,18315,2,0
+300086,"Total revenue, Sequential growth - Building products",opssd,18315,2,0
+300072,Incremental margin - Building products,opssd,18315,2,0
+259880,Total revenue - Sanitary and systems,opssd,18315,1,0
+300101,EBITDA - Building products,opssd,18315,1,0
+4616,Depreciation and amortization expenses,opssd,18315,1,0
+300094,"Gross profit/(loss), Sequential growth - Building products",opssd,18315,2,0
+617227,Capacity,opssd,18315,59,0
+300080,Operating income/(loss) - Building products,opssd,18315,1,0
+2062,Other operating adjustments,sd,18315,1,0
+2507,Long-term debt / Capital,sd,18315,2,0
+205,Total non-operating income/(expense),sd,18315,1,0
+4389,(Increase)/decrease in inventories,sd,18315,1,0
+4255,(Increase)/decrease in accounts receivables,sd,18315,1,0
+2503,Debt / Equity,sd,18315,2,0
+1194,Total operating adjustments,sd,18315,1,0
+2030,Other non-current assets,sd,18315,1,0
+4446,"Debt / EBITDA, TTM",sd,18315,9,0
+4250,EBITDA,sd,18315,1,0
+4431,"EBITDA, Sequential growth",sd,18315,2,0
+2680,"Return on average assets, TTM",sd,18315,2,0
+209,Provision/(benefit) for income taxes,sd,18315,1,0
+206,"Interest income/(expense), Net - Non-operating",sd,18315,1,0
+4392,Increase/(decrease) in accounts payable and accrued expense,sd,18315,1,0
+2478,Capital expenditures,sd,18315,1,0
+4390,Interest income - Non-operating,sd,18315,1,0
+1191,Net cash flows provided by/(used in) financing activities,sd,18315,1,0
+1214,"Receivables, Net",sd,18315,1,0
+4384,Cash & cash equivalents,sd,18315,1,0
+2051,Other stockholders' equity,sd,18315,1,0
+4449,EBITDA / Interest expense,sd,18315,9,0
+2849,Total stockholders' equity incl. minority interest,sd,18315,1,0
+4439,"Net income/(loss), YoY",sd,18315,2,0
+217,Net income/(loss),sd,18315,1,0
+4434,"EPS Diluted, Sequential growth",sd,18315,2,0
+4433,"Net income/(loss), Sequential growth",sd,18315,2,0
+4536,"Dividends per share, YoY",sd,18315,2,0
+2683,"Return on average equity, TTM",sd,18315,2,0
+2506,Long-term debt / Equity,sd,18315,2,0
+2676,Effective tax rate,sd,18315,2,0
+570,Debt and capital lease obligations - Non-current,sd,18315,1,0
+555,Total stockholders' equity,sd,18315,1,0
+3941,Interest income/(expense) - Non-operating,sd,18315,1,0
+2847,Accounts receivable,sd,18315,1,0
+4440,"EPS Diluted, YoY",sd,18315,2,0
+470,Total assets,sd,18315,1,0
+4438,"EBITDA, YoY",sd,18315,2,0
+2658,Minority interest,sd,18315,1,0
+557,Total current liabilities,sd,18315,1,0
+2398,Other financing activities,sd,18315,1,0
+4451,"Capital expenditures, YoY",sd,18315,2,0
+1187,"Cash & cash equivalents, Ending",sd,18315,1,0
+567,Accounts payable and accrued expense,sd,18315,1,0
+2505,Debt / Capital,sd,18315,2,0
+193,Total cost of revenue,sd,18315,1,0
+2494,Cash ratio,sd,18315,9,0
+4450,"Capital expenditures, Sequential growth",sd,18315,2,0
+4590,Net debt,sd,18315,1,0
+2508,Assets / Equity,sd,18315,2,0
+2027,Other operating expenses,sd,18315,1,0
+2785,"Net debt / EBITDA, TTM",sd,18315,9,0
+2045,Other non-current liabilities,sd,18315,1,0
+2767,Accounts payable,sd,18315,1,0
+4441,Free cash flow (FCF),sd,18315,1,0
+2778,Total debt,sd,18315,1,0
+1215,"Inventories, Net",sd,18315,1,0
+4519,"EPS Diluted, Applicable to common stockholders, Sequential growth",sd,18315,2,0
+526,"Intangible assets, Net",sd,18315,1,0
+1210,Total current assets,sd,18315,1,0
+1195,(Increase)/decrease in working capital,sd,18315,1,0
+553,Total liabilities and stockholders' equity,sd,18315,1,0
+220,"Weighted average shares outstanding, Basic",sd,18315,6,0
+1213,"Cash, short-term investments and marketable securities",sd,18315,1,0
+203,Total costs and expenses,sd,18315,1,0
+1197,Depreciation & amortization expense - Cash flow,sd,18315,1,0
+1207,Payment of dividends,sd,18315,1,0
+4253,Dividends per share,sd,18315,1,0
+560,Total non-current liabilities,sd,18315,1,0
+1204,"Increase/(decrease) in debt, Net",sd,18315,1,0
+4442,"Free cash flow (FCF), Sequential growth",sd,18315,2,0
+2492,Current ratio,sd,18315,9,0
+4443,"Free cash flow (FCF), YoY",sd,18315,2,0
+4427,Total adjustments to reconcile cash provided from operations,sd,18315,1,0
+1186,"Cash & cash equivalents, Beginning",sd,18315,1,0
+211,"Minority interest, Net of taxes",sd,18315,1,0
+2493,Quick ratio,sd,18315,9,0
+4395,(Increase)/decrease in current assets,sd,18315,1,0
+218,EPS Basic,sd,18315,1,0
+2763,"Net income/(loss), Applicable to common stockholders",sd,18315,1,0
+195,Total operating expenses,sd,18315,1,0
+1193,Net income/(loss) from continuing operations - Cash flow,sd,18315,1,0
+554,Total liabilities,sd,18315,1,0
+2029,Other current assets,sd,18315,1,0
+208,Income/(loss) from continuing operations before income taxes,sd,18315,1,0
+4394,Increase/(decrease) in current liabilities,sd,18315,1,0
+4397,"EPS Basic, Applicable to common stockholders",sd,18315,1,0
+4515,"Net income/(loss), Applicable to common stockholders, Sequential growth",sd,18315,2,0
+1200,"(Increase)/decrease in property, plant & equipment",sd,18315,1,0
+4532,"EPS Diluted, Applicable to common stockholders, YoY",sd,18315,2,0
+2504,Debt / Assets,sd,18315,2,0
+1190,Net cash flows provided by/(used in) investing activities,sd,18315,1,0
+1189,Net cash flows provided by/(used in) operating activities,sd,18315,1,0
+219,EPS Diluted,sd,18315,1,0
+4528,"Net income/(loss), Applicable to common stockholders, YoY",sd,18315,2,0
+4398,"EPS Diluted, Applicable to common stockholders",sd,18315,1,0
+568,Debt and capital lease obligations - Current,sd,18315,1,0
+1185,Increase/(decrease) in cash & cash equivalents,sd,18315,1,0
+276,Total non-current assets,sd,18315,1,0
+221,"Weighted average shares outstanding, Diluted",sd,18315,6,0
+4523,"Dividends per share, Sequential growth",sd,18315,2,0
+2848,Interest expense - Non-operating,sd,18315,1,0
+1217,"Property, plant & equipment, Net",sd,18315,1,0
+210,Income/(loss) from continuing operations,sd,18315,1,0
+4432,"Operating income/(loss), Sequential growth",sd,18315,2,0
+4430,"Gross profit/(loss), Sequential growth",sd,18315,2,0
+2044,Other current liabilities,sd,18315,1,0
+4437,"Operating income/(loss), YoY",sd,18315,2,0
+194,Gross profit/(loss),sd,18315,1,0
+204,Operating income/(loss),sd,18315,1,0
+2675,Operating income / Interest expense,sd,18315,9,0
+4436,"Gross profit/(loss), YoY",sd,18315,2,0
+4379,Net (acquisitions)/disposals,sd,18315,1,0
+2758,"Payables turnover, Revenue-based",sd,18315,9,0
+2500,Net margin,sd,18315,2,0
+2665,Receivables turnover,sd,18315,9,0
+60728,"Days payables outstanding, Revenue-based",sd,18315,9,0
+2679,Cash flow from operations / Sales,sd,18315,2,0
+2498,Pre-tax margin,sd,18315,2,0
+60721,Days sales outstanding,sd,18315,9,0
+2672,Assets turnover,sd,18315,9,0
+60724,"Days inventory outstanding, Revenue-based",sd,18315,9,0
+190,Total revenue,sd,18315,1,0
+4445,Incremental margin,sd,18315,2,0
+2671,Fixed assets turnover,sd,18315,9,0
+2497,Operating margin,sd,18315,2,0
+4429,"Total revenue, Sequential growth",sd,18315,2,0
+2496,Gross margin,sd,18315,2,0
+4251,EBITDA margin,sd,18315,2,0
+2667,"Inventory turnover, Revenue-based",sd,18315,9,0
+4435,"Total revenue, YoY",sd,18315,2,0
+60729,"Cash conversion cycle, Revenue-based",sd,18315,9,0
+3982,Depreciation & amortization expense (D&A),sd,18315,1,0
+5390,Total payout,sd,18315,1,0
+5388,Dividends paid,sd,18315,1,0
+5391,Dividend payout ratio,sd,18315,2,0
+5399,CapEx / Sales,sd,18315,2,0
+5393,Total payout ratio,sd,18315,2,0
+5400,Total payout per share,sd,18315,1,0
+5427,Free cash flow (FCF) / Debt,sd,18315,9,0
+5426,(EBITDA less CapEx) / Interest expense,sd,18315,9,0
+5495,Common shareholders' equity,sd,18315,1,0
+5490,Long-term debt and payables,sd,18315,1,0
+4598,Free cash flow (FCF) per share,sd,18315,1,0
+2495,Revenue per share,sd,18315,1,0
+5589,Tangible book value per share,sd,18315,1,0
+5588,Book value per share,sd,18315,1,0
+5610,"Total debt, Average",sd,18315,1,0
+5598,"Inventories, Average",sd,18315,1,0
+5600,"Total assets, Average",sd,18315,1,0
+5602,"Total stockholders'' equity incl. minority interest, Average",sd,18315,1,0
+5597,"Receivables, Average",sd,18315,1,0
+5601,"Total stockholders'' equity, Average",sd,18315,1,0
+5596,"Accounts receivable, Average",sd,18315,1,0
+5599,"Property, plant & equipment, Average",sd,18315,1,0
+5628,"Payables turnover, COGS-based",sd,18315,9,0
+543434,"Cash conversion cycle, COGS-based",sd,18315,9,0
+5627,"Inventory turnover, COGS-based",sd,18315,9,0
+543433,"Days payables outstanding, COGS-based",sd,18315,9,0
+5626,"Accounts payable, Average",sd,18315,1,0
+543431,"Days inventory outstanding, COGS-based",sd,18315,9,0
+5650,"Revenue per share, GAAP",sd,18315,1,0
+5644,"EPS Diluted, Applicable to common stockholders, GAAP",sd,18315,1,0
+5641,"Net income/(loss), Applicable to common stockholders, Operating",sd,18315,1,0
+5634,"Operating income/(loss), GAAP",sd,18315,1,0
+5637,"Net income/(loss), Operating",sd,18315,1,0
+5640,"Net income/(loss), Applicable to common stockholders, GAAP",sd,18315,1,0
+5648,"EBITDA, GAAP",sd,18315,1,0
+5636,"Net income/(loss), GAAP",sd,18315,1,0
+5632,"Total revenue, GAAP",sd,18315,1,0
+5645,"EPS Diluted, Applicable to common stockholders, Operating",sd,18315,1,0
+5657,"EBITDA, Primary",sd,18315,1,1
+5654,"Net income/(loss), Primary",sd,18315,1,1
+5655,"Net income/(loss), Applicable to common stockholders, Primary",sd,18315,1,1
+5656,"EPS Diluted, Applicable to common stockholders, Primary",sd,18315,1,1
+5653,"Operating income/(loss), Primary",sd,18315,1,1
+5761,"EPS Diluted, Applicable to common stockholders, Operating, YoY",sd,18315,2,0
+5760,"EPS Diluted, Applicable to common stockholders, GAAP, YoY",sd,18315,2,0
+5863,Return on tangible common shareholders' equity (ROTCE),sd,18315,2,0
+5869,Capital employed,sd,18315,1,0
+5859,Tangible common equity,sd,18315,1,0
+5865,Pre-tax return on average assets,sd,18315,2,0
+5873,Return on average capital employed (ROACE),sd,18315,2,0
+5871,"Capital employed, Average",sd,18315,1,0
+5861,"Tangible common equity, Average",sd,18315,1,0
+2396,Other investing activities,sd,18315,1,0
+5885,"Invested capital, Average",sd,18315,1,0
+5899,FCF margin,sd,18315,2,0
+5884,Invested capital,sd,18315,1,0
+5887,Post-tax return on invested capital (ROIC),sd,18315,2,0
+5883,Net operating profit after tax (NOPAT),sd,18315,1,0
+5886,Pre-tax return on invested capital (ROIC),sd,18315,2,0
+5920,Interest expense rate,sd,18315,2,0
+5918,"Cash, short-term investments and marketable securities, Average",sd,18315,1,0
+5911,D&A / Sales,sd,18315,2,0
+5907,COGS / Sales ,sd,18315,2,0
+5916,CapEx / D&A,sd,18315,2,0
+5913,OpEx / Sales,sd,18315,2,0
+5919,Interest income rate,sd,18315,2,0
+2054,Common stock and additional paid-in capital,sd,18315,1,0
+5905,Total debt excl. lease liability,sd,18315,1,0
+5906,Net debt excl. lease liability,sd,18315,1,0
+5924,Debt excl. lease liability - Current,sd,18315,1,0
+5926,Debt excl. lease liability - Non-current,sd,18315,1,0
+5360,Goodwill,sd,18315,1,0
+5566,Return on average equity,sd,18315,2,0
+5952,"Cash flow return on investment (CFROI), TTM",sd,18315,2,0
+214,"Income/(loss) from discontinued operations, Net of taxes",sd,18315,1,0
+213,Income/(loss) from equity investments,sd,18315,1,0

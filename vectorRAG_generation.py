@@ -1,6 +1,6 @@
-from langchain import hub
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains.retrieval import create_retrieval_chain
+from langchain_classic import hub
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+from langchain_classic.chains.retrieval import create_retrieval_chain
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Neo4jVector
 import textwrap

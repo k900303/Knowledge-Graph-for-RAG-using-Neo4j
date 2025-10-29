@@ -15,11 +15,17 @@ OPENAI_ENDPOINT = os.getenv('OPENAI_BASE_URL') + '/embeddings'
 
 
 
-# Global constants
+# Global constants - Original (Napoleon)
 VECTOR_INDEX_NAME = 'NapoleonOpenAI'
 VECTOR_NODE_LABEL = 'Napoleon_Chunk'
 VECTOR_SOURCE_PROPERTY = 'text'
 VECTOR_EMBEDDING_PROPERTY = 'textEmbeddingOpenAI'
+
+# PEERS RAG constants - Company data
+PEERS_VECTOR_INDEX_NAME = 'CompanyOpenAI'
+PEERS_VECTOR_NODE_LABEL = 'Company_Chunk'
+PEERS_VECTOR_SOURCE_PROPERTY = 'text'
+PEERS_VECTOR_EMBEDDING_PROPERTY = 'textEmbeddingOpenAI'
 
 
 graph = Neo4jGraph(
