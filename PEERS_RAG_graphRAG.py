@@ -528,8 +528,180 @@ class PEERSGraphRAG:
         
         return text.strip()
     
+    def _search_exact_company_name(self, search_term: str, limit: int = 5) -> str:
+        """
+        Search Neo4j for exact company name matching the search term
+        Returns the first matching company name or None
+        
+        Args:
+            search_term: Partial company name from user query (e.g., "kajaria")
+            limit: Maximum number of results to check
+            
+        Returns:
+            Exact company name from database (e.g., "Kajaria Ceramics") or None
+        """
+        try:
+            # Ensure graph connection is available
+            global graph
+            if graph is None:
+                graph = get_graph()
+                if graph is None:
+                    if self.log_manager:
+                        self.log_manager.add_info_log('Neo4j not connected, cannot search for exact company name')
+                    return None
+            
+            # Use fuzzy matching with CONTAINS, STARTS WITH, ENDS WITH
+            query = f"""
+            MATCH (c:Company)
+            WHERE c.company_name CONTAINS '{search_term}' 
+               OR c.company_name STARTS WITH '{search_term}'
+               OR toLower(c.company_name) CONTAINS toLower('{search_term}')
+            RETURN c.company_name
+            LIMIT {limit}
+            """
+            
+            results = graph.query(query)
+            
+            if results and len(results) > 0:
+                # Return the first match (most relevant)
+                exact_company_name = results[0].get('c.company_name', None)
+                if exact_company_name:
+                    if self.log_manager:
+                        self.log_manager.add_info_log(f'Found exact company name: "{exact_company_name}" for search term "{search_term}"')
+                    return exact_company_name
+            
+            if self.log_manager:
+                self.log_manager.add_info_log(f'No company found matching "{search_term}"')
+            return None
+            
+        except Exception as e:
+            if self.log_manager:
+                self.log_manager.add_info_log(f'Error searching for company name: {str(e)}')
+            return None
+    
+    def _generate_smart_fallback_query(self, question: str) -> str:
+        """
+        Generate a smart fallback Cypher query by extracting company name from question
+        First searches Neo4j for the exact company name, then uses it in the query
+        This is used when tool calling fails to produce a valid query
+        """
+        try:
+            question_lower = question.lower()
+            
+            # Check if this is a company details query
+            is_details_query = any(word in question_lower for word in ['details', 'detail', 'information', 'info', 'about'])
+            is_parameter_query = self._is_parameter_question(question)
+            
+            # Try to extract company search term from question
+            company_search_term = None
+            
+            # Check for common patterns
+            import re
+            
+            # Pattern: "details of [company]", "company details of [company]", etc.
+            patterns = [
+                r'(?:details?|information|info|about)\s+(?:of|for|about)\s+([a-zA-Z][\w\s]+?)(?:\s+company|\s+details|\s+information|$)',
+                r'company\s+details?\s+(?:of|for|about)\s+([a-zA-Z][\w\s]+?)(?:\s+company|$)',
+                r'([a-zA-Z][\w\s]+?)\s+company\s+details?',
+                r'([a-zA-Z][\w\s]+?)(?:\s+details|\s+information|\s+info)',
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, question_lower, re.IGNORECASE)
+                if match:
+                    company_search_term = match.group(1).strip()
+                    # Remove common stop words
+                    company_search_term = re.sub(r'\s+(company|details|information|info|the|of|for|about)$', '', company_search_term, flags=re.IGNORECASE)
+                    if len(company_search_term) > 2:
+                        break
+            
+            # If not found, try simple word extraction (look for capitalized words)
+            if not company_search_term:
+                words = question.split()
+                for i, word in enumerate(words):
+                    if word.isalpha() and len(word) > 3 and word[0].isupper():
+                        # Check if this looks like a company name
+                        if i < len(words) - 1:
+                            next_word = words[i + 1]
+                            if next_word.lower() in ['company', 'details', 'information', 'info', 'of', 'for']:
+                                company_search_term = word
+                                break
+                        # Or if it's at the end and the question contains details/info
+                        elif is_details_query:
+                            company_search_term = word
+                            break
+            
+            # Try getting company from schema context as last resort
+            if not company_search_term:
+                try:
+                    if schema_context := self.get_dynamic_schema_context():
+                        companies = schema_context.get('companies', [])
+                        for company in companies[:50]:
+                            company_words = company.lower().split()
+                            for word in company_words:
+                                if len(word) > 3 and word in question_lower:
+                                    company_search_term = company
+                                    break
+                            if company_search_term:
+                                break
+                except:
+                    pass
+            
+            # If we found a search term, first search Neo4j for exact company name
+            if company_search_term:
+                if self.log_manager:
+                    self.log_manager.add_info_log(f'Searching Neo4j for exact company name matching "{company_search_term}"')
+                
+                # Get the first word for initial search (e.g., "kajaria" from "kajaria company")
+                search_word = company_search_term.split()[0].lower()
+                
+                # Search for exact company name in database
+                exact_company_name = self._search_exact_company_name(search_word, limit=5)
+                
+                # Use exact name if found, otherwise use search term
+                if exact_company_name:
+                    company_name_to_use = exact_company_name
+                    if self.log_manager:
+                        self.log_manager.add_info_log(f'Using exact company name: "{company_name_to_use}"')
+                else:
+                    # Fallback to using the search term directly (with fuzzy matching)
+                    company_name_to_use = company_search_term
+                    if self.log_manager:
+                        self.log_manager.add_info_log(f'Exact name not found, using search term: "{company_name_to_use}"')
+                
+                # Generate appropriate query based on type
+                if is_details_query and not is_parameter_query:
+                    # Company details query - use exact company name for better matching
+                    return f"""MATCH (c:Company)-[:IN_COUNTRY]->(country:Country),
+                      (c)-[:IN_SECTOR]->(s:Sector),
+                      (c)-[:IN_INDUSTRY]->(i:Industry)
+                    WHERE c.company_name = '{company_name_to_use}' OR c.company_name CONTAINS '{company_name_to_use}'
+                    RETURN c.company_name, c.cid, country.name as country, country.code as country_code,
+                           s.name as sector, i.name as industry, c.market_cap, c.description
+                    LIMIT 10"""
+                elif is_parameter_query:
+                    # Parameter query with company filter - use exact name
+                    return f"""MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
+                    WHERE c.company_name = '{company_name_to_use}' OR c.company_name CONTAINS '{company_name_to_use}'
+                    RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth
+                    ORDER BY pr.period DESC
+                    LIMIT 20"""
+                else:
+                    # Generic company query - use exact name
+                    return f"""MATCH (c:Company)
+                    WHERE c.company_name = '{company_name_to_use}' OR c.company_name CONTAINS '{company_name_to_use}'
+                    RETURN c.company_name, c.cid
+                    LIMIT 20"""
+            
+            return None  # Could not extract company name
+            
+        except Exception as e:
+            if self.log_manager:
+                self.log_manager.add_info_log(f'Smart fallback query generation failed: {str(e)}')
+            return None
+    
     def _generate_fallback_query(self, question: str) -> str:
-        """Generate a smart fallback Cypher query when LLM fails"""
+        """Generate a smart fallback Cypher query when LLM fails (deprecated - use _generate_smart_fallback_query)"""
         question_lower = question.lower()
         original_question = question
         
@@ -888,14 +1060,31 @@ RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency
             
             # If we get here, tool calling didn't produce valid query
             if self.log_manager:
-                self.log_manager.add_error_log('Tool calling did not produce valid query. Please check logs.')
-            # Return a simple fallback query
+                self.log_manager.add_info_log('Tool calling did not produce valid query, using smart fallback')
+            
+            # Try to generate a smart fallback query based on the question
+            fallback_query = self._generate_smart_fallback_query(question)
+            if fallback_query:
+                if self.log_manager:
+                    self.log_manager.add_info_log(f'Using smart fallback query: {fallback_query}')
+                return fallback_query
+            
+            # Final fallback - generic query
             return "MATCH (c:Company) RETURN c.company_name, c.cid LIMIT 10"
             
         except Exception as e:
             if self.log_manager:
                 self.log_manager.add_error_log(f'Tool calling generation failed: {str(e)}', e)
-            # Return a simple fallback query
+            
+            # Try smart fallback even in exception case
+            try:
+                fallback_query = self._generate_smart_fallback_query(question)
+                if fallback_query:
+                    return fallback_query
+            except:
+                pass
+            
+            # Final fallback - generic query
             return "MATCH (c:Company) RETURN c.company_name, c.cid LIMIT 10"
     
     def execute_cypher_query(self, cypher_query: str) -> list:
