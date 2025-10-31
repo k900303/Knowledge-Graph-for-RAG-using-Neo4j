@@ -397,9 +397,73 @@
             color: #a78bfa;
         }
 
+        .log-type.tool_call {
+            color: #fbbf24;
+        }
+
         .log-message {
             color: #e2e8f0;
             flex: 1;
+        }
+        
+        /* Tool calling log specific styles */
+        .tool-call-entry {
+            margin-bottom: 12px;
+            padding: 12px;
+            background: #0f172a;
+            border-radius: 6px;
+            border-left: 4px solid #fbbf24;
+            animation: slideIn 0.3s ease;
+        }
+        
+        .tool-call-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .tool-call-name {
+            color: #fbbf24;
+            font-weight: bold;
+            font-size: 1rem;
+        }
+        
+        .tool-call-duration {
+            color: #94a3b8;
+            font-size: 0.8rem;
+        }
+        
+        .tool-call-section {
+            margin-top: 10px;
+            padding: 8px;
+            background: #1e293b;
+            border-radius: 4px;
+        }
+        
+        .tool-call-section-label {
+            color: #60a5fa;
+            font-size: 0.85rem;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+        
+        .tool-call-section-content {
+            color: #e2e8f0;
+            font-size: 0.85rem;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+            word-break: break-word;
+        }
+        
+        .tool-call-args {
+            color: #a78bfa;
+        }
+        
+        .tool-call-response {
+            color: #34d399;
         }
 
         .log-file-info {
@@ -577,13 +641,10 @@
                 </div>
 
                 <div class="radio-group" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-                    <h3 style="margin-bottom: 15px; color: #2563eb;">⚙️ Advanced Options:</h3>
-                    <label style="display: flex; align-items: center; cursor: pointer;">
-                        <input type="checkbox" id="useToolCalling" style="margin-right: 8px; cursor: pointer;">
-                        <span>Enable Tool Calling</span>
-                    </label>
-                    <small style="display: block; margin-top: 8px; color: #6b7280; font-size: 0.85rem; padding-left: 24px;">
-                        Uses semantic search for parameters (80% token reduction)
+                    <h3 style="margin-bottom: 15px; color: #2563eb;">⚙️ System Info:</h3>
+                    <small style="display: block; color: #6b7280; font-size: 0.85rem; padding: 8px; background: #f3f4f6; border-radius: 6px;">
+                        ✅ Tool Calling: <strong>Enabled by default</strong><br>
+                        Uses semantic search for dynamic parameter discovery (80% token reduction)
                     </small>
                 </div>
 
@@ -625,6 +686,14 @@
                     <div id="logsContent"></div>
                 </div>
 
+                <div class="logs-container" style="display: none;" id="toolCallLogsContainer">
+                    <div class="logs-header">
+                        <h3>🔧 Tool Calling Logs</h3>
+                        <button class="clear-logs-btn" onclick="clearToolCallLogs()">Clear Logs</button>
+                    </div>
+                    <div id="toolCallLogsContent"></div>
+                </div>
+
                 <div class="logs-container" style="display: none;" id="cypherHistoryContainer">
                     <div class="logs-header">
                         <h3>🔍 Cypher Query History</h3>
@@ -641,6 +710,7 @@
         let isInitialized = false;
         let eventSource = null;
         let logEntries = [];
+        let toolCallLogs = [];
 
         function showAlert(message, type = 'info') {
             const alertsDiv = document.getElementById('alerts');
@@ -666,7 +736,12 @@
             eventSource.onmessage = function(event) {
                 try {
                     const logData = JSON.parse(event.data);
-                    addLogEntry(logData);
+                    // Handle tool call logs separately
+                    if (logData.type === 'tool_call') {
+                        addToolCallLog(logData);
+                    } else {
+                        addLogEntry(logData);
+                    }
                 } catch (e) {
                     console.error('Failed to parse log data:', e);
                 }
@@ -683,6 +758,11 @@
         }
 
         function addLogEntry(logData) {
+            // Skip tool_call logs - they are handled separately
+            if (logData.type === 'tool_call') {
+                return;
+            }
+            
             logEntries.push(logData);
             const logsContent = document.getElementById('logsContent');
             
@@ -738,6 +818,91 @@
                     logsContent.removeChild(firstChild);
                 }
             }
+        }
+
+        function addToolCallLog(logData) {
+            toolCallLogs.push(logData);
+            const toolCallLogsContent = document.getElementById('toolCallLogsContent');
+            const container = document.getElementById('toolCallLogsContainer');
+            
+            // Show container if hidden
+            container.style.display = 'block';
+            
+            const toolCallEntry = document.createElement('div');
+            toolCallEntry.className = 'tool-call-entry';
+            
+            // Format arguments for display
+            let argsStr = '';
+            if (logData.arguments) {
+                try {
+                    argsStr = JSON.stringify(logData.arguments, null, 2);
+                } catch {
+                    argsStr = String(logData.arguments);
+                }
+            }
+            
+            // Format response for display
+            let responseStr = '';
+            if (logData.response) {
+                try {
+                    responseStr = JSON.stringify(logData.response, null, 2);
+                    if (responseStr.length > 1000) {
+                        responseStr = responseStr.substring(0, 1000) + '\n... (truncated)';
+                    }
+                } catch {
+                    responseStr = String(logData.response);
+                }
+            }
+            
+            const durationText = logData.duration_ms ? `(${logData.duration_ms}ms)` : '';
+            
+            toolCallEntry.innerHTML = `
+                <div class="tool-call-header">
+                    <span class="tool-call-name">🔧 ${logData.tool_name || 'Unknown Tool'}</span>
+                    <span class="tool-call-duration">[${logData.timestamp}] ${durationText}</span>
+                </div>
+                
+                <div class="tool-call-section">
+                    <div class="tool-call-section-label">📥 Arguments:</div>
+                    <div class="tool-call-section-content tool-call-args">${escapeHtml(argsStr) || 'No arguments'}</div>
+                </div>
+                
+                <div class="tool-call-section">
+                    <div class="tool-call-section-label">📤 Response:</div>
+                    <div class="tool-call-section-content tool-call-response">${escapeHtml(responseStr) || 'No response'}</div>
+                </div>
+            `;
+            
+            toolCallLogsContent.appendChild(toolCallEntry);
+            
+            // Auto-scroll to bottom
+            container.scrollTop = container.scrollHeight;
+            
+            // Keep only last 50 tool call logs
+            if (toolCallLogs.length > 50) {
+                toolCallLogs.shift();
+                const firstChild = toolCallLogsContent.firstElementChild;
+                if (firstChild) {
+                    toolCallLogsContent.removeChild(firstChild);
+                }
+            }
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+
+        function clearToolCallLogs() {
+            toolCallLogs = [];
+            document.getElementById('toolCallLogsContent').innerHTML = '';
+            document.getElementById('toolCallLogsContainer').style.display = 'none';
         }
 
         function toggleTraceback(tracebackId) {
@@ -843,21 +1008,17 @@
         }
 
         function initRAG() {
-            const useToolCalling = document.getElementById('useToolCalling').checked;
-            const statusMsg = useToolCalling ? 'with Tool Calling enabled' : '';
-            showAlert(`Initializing RAG systems ${statusMsg}...`, 'info');
+            showAlert('Initializing RAG systems (Tool Calling: enabled by default)...', 'info');
             
             fetch('/api/init', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({use_tool_calling: useToolCalling})
+                headers: {'Content-Type': 'application/json'}
             })
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
                     isInitialized = true;
-                    const toolStatus = data.tool_calling_enabled ? ' (Tool Calling: Enabled)' : '';
-                    showAlert('✅ RAG systems initialized successfully!' + toolStatus, 'success');
+                    showAlert('✅ RAG systems initialized successfully! (Tool Calling: Enabled)', 'success');
                 } else {
                     showAlert('❌ ' + data.message, 'error');
                 }
@@ -903,7 +1064,6 @@
             }
 
             const mode = document.querySelector('input[name="mode"]:checked').value;
-            const useToolCalling = document.getElementById('useToolCalling').checked;
             
             showAlert('Processing query...', 'info');
             
@@ -915,8 +1075,7 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     query: query, 
-                    mode: mode,
-                    use_tool_calling: useToolCalling
+                    mode: mode
                 })
             })
             .then(response => response.json())

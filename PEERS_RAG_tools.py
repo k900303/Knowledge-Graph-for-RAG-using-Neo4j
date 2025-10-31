@@ -96,11 +96,22 @@ class ParameterSearchTool(BaseToolHandler):
             if self.log_manager:
                 self.log_manager.add_info_log(f'Found {len(matches)} parameter matches for "{search_term}"')
             
-            return {
+            result = {
                 "matches": matches,
                 "search_term": search_term,
                 "total_found": len(matches)
             }
+            
+            # Log tool call result
+            if self.log_manager and hasattr(self.log_manager, 'add_tool_call_log'):
+                self.log_manager.add_tool_call_log(
+                    tool_name="search_parameters",
+                    arguments={"search_term": search_term, "company_id": company_id, "limit": limit},
+                    response=result,
+                    duration_ms=None
+                )
+            
+            return result
             
         except Exception as e:
             if self.log_manager:
@@ -239,11 +250,22 @@ class CompanySearchTool(BaseToolHandler):
             if self.log_manager:
                 self.log_manager.add_info_log(f'Found {len(companies)} company matches for "{company_name}"')
             
-            return {
+            result = {
                 "companies": companies,
                 "search_term": company_name,
                 "total_found": len(companies)
             }
+            
+            # Log tool call result
+            if self.log_manager and hasattr(self.log_manager, 'add_tool_call_log'):
+                self.log_manager.add_tool_call_log(
+                    tool_name="search_company",
+                    arguments={"company_name": company_name, "limit": limit},
+                    response=result,
+                    duration_ms=None
+                )
+            
+            return result
             
         except Exception as e:
             if self.log_manager:
@@ -406,13 +428,24 @@ class CypherGeneratorTool(BaseToolHandler):
             {order_clause}
             """.strip()
             
-            return {
+            result = {
                 "cypher_query": cypher,
                 "query_type": "parameter",
                 "company_name": company_name,
                 "parameter_names": parameter_names,
                 "period": period
             }
+            
+            # Log tool call result
+            if self.log_manager and hasattr(self.log_manager, 'add_tool_call_log'):
+                self.log_manager.add_tool_call_log(
+                    tool_name="generate_parameter_query",
+                    arguments={"company_name": company_name, "parameter_names": parameter_names, "period": period, "periods": periods},
+                    response=result,
+                    duration_ms=None
+                )
+            
+            return result
             
         except Exception as e:
             if self.log_manager:
@@ -446,11 +479,22 @@ class CypherGeneratorTool(BaseToolHandler):
                 LIMIT 10
                 """.strip()
             
-            return {
+            result = {
                 "cypher_query": cypher,
                 "query_type": "company_details",
                 "company_name": company_name
             }
+            
+            # Log tool call result
+            if self.log_manager and hasattr(self.log_manager, 'add_tool_call_log'):
+                self.log_manager.add_tool_call_log(
+                    tool_name="generate_company_details_query",
+                    arguments={"company_name": company_name, "include_relationships": include_relationships},
+                    response=result,
+                    duration_ms=None
+                )
+            
+            return result
             
         except Exception as e:
             if self.log_manager:
@@ -530,11 +574,22 @@ class CypherGeneratorTool(BaseToolHandler):
                 LIMIT {limit}
                 """.strip()
             
-            return {
+            result = {
                 "cypher_query": cypher,
                 "query_type": "filter",
                 "filters": filters
             }
+            
+            # Log tool call result
+            if self.log_manager and hasattr(self.log_manager, 'add_tool_call_log'):
+                self.log_manager.add_tool_call_log(
+                    tool_name="generate_filter_query",
+                    arguments=filters,
+                    response=result,
+                    duration_ms=None
+                )
+            
+            return result
             
         except Exception as e:
             if self.log_manager:

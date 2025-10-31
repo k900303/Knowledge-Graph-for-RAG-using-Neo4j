@@ -5,10 +5,8 @@ Generates Cypher queries for company knowledge graph
 
 from langchain_community.graphs import Neo4jGraph
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import PromptTemplate
-from langchain_community.chains.graph_qa.cypher import GraphCypherQAChain
 from langchain_core.callbacks import BaseCallbackHandler
-from neo4j_env import graph
+from neo4j_env import graph, get_graph
 from PEERS_RAG_tools import ToolRegistry
 from PEERS_RAG_react import ReActEngine, BaseReasoningEngine
 import textwrap
@@ -20,54 +18,7 @@ import re
 import json
 
 
-retrieval_qa_chat_prompt = """
-Task: Generate Cypher statement to query a graph database about companies and their relationships.
-
-Instructions:
-Use only the provided relationship types and properties in the schema. Do not use any other relationship types or properties that are not provided.
-
-Remember the relationships are like this Schema:
-{schema}
-
-Graph Structure:
-- Companies are connected to Countries via [:IN_COUNTRY]
-- Companies are connected to Regions via [:IN_REGION]
-- Companies are connected to Sectors via [:IN_SECTOR]
-- Companies are connected to Industries via [:IN_INDUSTRY]
-- Companies are connected to Exchanges via [:LISTED_ON]
-- Companies have detailed chunks connected via [:HAS_Chunk_INFO]
-
-Note: Do not include any explanations or apologies in your responses.
-Do not include any text except the generated Cypher statement.
-
-Example 1: Which companies are in the Technology sector?
-MATCH (c:Company)-[:IN_SECTOR]->(s:Sector {name: 'Technology'})
-RETURN c.company_name, c.cid, c.market_cap, c.base_currency
-
-Example 2: Show me companies listed on NASDAQ with market cap over 1 billion USD
-MATCH (c:Company)-[:LISTED_ON]->(e:Exchange)
-WHERE e.code CONTAINS 'NASDAQ' AND c.market_cap > 1000000000 AND c.base_currency = 'USD'
-RETURN c.company_name, c.cid, c.market_cap, c.exchange_symbol
-
-Example 3: Find companies in the United States in the Healthcare sector
-MATCH (c:Company)-[:IN_COUNTRY]->(country:Country {code: 'US'})
-MATCH (c)-[:IN_SECTOR]->(s:Sector {name: 'Health Care'})
-RETURN c.company_name, c.cid, s.name, country.name
-
-Example 4: Show me companies in Asia with positive one week change
-MATCH (c:Company)-[:IN_REGION]->(r:Region {name: 'Asia'})
-WHERE c.one_week_change > 0
-RETURN c.company_name, c.cid, c.one_week_change, c.this_month_change
-ORDER BY c.one_week_change DESC
-
-Example 5: List all pharmaceutical companies with their industry details
-MATCH (c:Company)-[:IN_INDUSTRY]->(i:Industry)
-WHERE i.name CONTAINS 'Pharmaceutical'
-RETURN c.company_name, c.cid, i.name, i.id, c.market_cap
-
-The question is:
-{question}
-"""
+# Note: The old monolithic prompt template has been removed - we now use Tool Calling exclusively
 
 
 class OutputCapture:
@@ -104,13 +55,13 @@ class OutputCapture:
 class PEERSGraphRAG:
     """GraphRAG class for company knowledge graph"""
     
-    def __init__(self, log_manager=None, use_tool_calling=False):
+    def __init__(self, log_manager=None, use_tool_calling=True):
         self.log_manager = log_manager
         self.cypher_history = []  # Store generated Cypher queries
         self.schema_cache = None  # Cache for schema data
         self.cache_timestamp = None
         
-        # Tool Calling support
+        # Tool Calling support (now default)
         self.use_tool_calling = use_tool_calling
         self.tool_registry = None
         self.llm_with_tools = None
@@ -118,112 +69,11 @@ class PEERSGraphRAG:
         # ReAct support (future)
         self.react_engine = None
         
-        if self.use_tool_calling:
-            self._initialize_tool_calling()
+        # Always initialize tool calling (it's the default)
+        self._initialize_tool_calling()
         
-        # Create a comprehensive prompt for Cypher generation
-        cypher_prompt = PromptTemplate(
-            input_variables=["schema", "question", "available_values"],
-            template="""
-You are a Cypher query expert for a company knowledge graph. You MUST generate ONLY Cypher queries.
-
-Schema: {schema}
-
-AVAILABLE VALUES IN DATABASE:
-{available_values}
-
-CRITICAL RULES:
-1. NEVER return natural language responses like "I don't know" or "I cannot answer"
-2. ALWAYS generate a valid Cypher query, even if it might return empty results
-3. For parameter queries, use EXACT parameter names from available values (e.g., 'Total revenue, Primary' not 'Total Revenue')
-4. For company queries, use EXACT company names (e.g., 'Kajaria Ceramics' not just 'Kajaria')
-5. Return ONLY the Cypher query - no explanations, apologies, or additional text
-6. Use the available values above to guide your query construction
-7. Keep queries simple and direct - avoid unnecessary joins
-8. IMPORTANT: When user asks about "Total Revenue", use parameter_name = 'Total revenue, Primary' (exact match)
-9. IMPORTANT: When user asks about "Kajaria", use company_name = 'Kajaria Ceramics' (exact match)
-
-GRAPH STRUCTURE:
-- Companies are connected to Countries via [:IN_COUNTRY]
-- Companies are connected to Regions via [:IN_REGION] 
-- Companies are connected to Sectors via [:IN_SECTOR]
-- Companies are connected to Industries via [:IN_INDUSTRY]
-- Companies are connected to Exchanges via [:LISTED_ON]
-- Companies are connected to Parameters via [:HAS_PARAMETER]
-- Parameters are connected to PeriodResults via [:HAS_VALUE_IN_PERIOD]
-- Companies are connected to PeriodResults via [:HAS_RESULT_IN_PERIOD]
-
-FOR PARAMETER QUERIES: Use simple patterns like:
-MATCH (c:Company {company_name: 'Company Name'})-[:HAS_PARAMETER]->(p:Parameter {parameter_name: 'Exact Parameter Name'})-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
-
-COMPREHENSIVE EXAMPLES:
-
-Example 1: Which companies are in the Technology sector?
-MATCH (c:Company)-[:IN_SECTOR]->(s:Sector {name: 'Technology'}) RETURN c.company_name, c.cid, c.market_cap LIMIT 10
-
-Example 2: Show me companies listed on NASDAQ
-MATCH (c:Company)-[:LISTED_ON]->(e:Exchange) WHERE e.code CONTAINS 'NASDAQ' RETURN c.company_name, c.cid, c.exchange_symbol LIMIT 10
-
-Example 3: Find pharmaceutical companies
-MATCH (c:Company)-[:IN_INDUSTRY]->(i:Industry) WHERE i.name CONTAINS 'Pharmaceutical' RETURN c.company_name, c.cid, i.name
-
-Example 4: Which US companies are in Healthcare?
-MATCH (c:Company)-[:IN_COUNTRY]->(country:Country {code: 'US'}) MATCH (c)-[:IN_SECTOR]->(s:Sector {name: 'Health Care'}) RETURN c.company_name, c.cid, s.name LIMIT 10
-
-Example 5: Show me companies in Asia with positive change
-MATCH (c:Company)-[:IN_REGION]->(r:Region {name: 'Asia'}) WHERE c.one_week_change > 0 RETURN c.company_name, c.cid, c.one_week_change ORDER BY c.one_week_change DESC LIMIT 10
-
-Example 6: Find large companies with market cap over 1 billion
-MATCH (c:Company) WHERE c.market_cap > 1000000000 RETURN c.company_name, c.cid, c.market_cap ORDER BY c.market_cap DESC LIMIT 10
-
-Example 7: Companies in automotive industry
-MATCH (c:Company)-[:IN_INDUSTRY]->(i:Industry) WHERE i.name CONTAINS 'Automotive' RETURN c.company_name, c.cid, i.name
-
-Example 8: European companies in financial sector
-MATCH (c:Company)-[:IN_REGION]->(r:Region {name: 'Europe'}) MATCH (c)-[:IN_SECTOR]->(s:Sector {name: 'Financials'}) RETURN c.company_name, c.cid, r.name, s.name LIMIT 10
-
-Example 9: Companies with specific ticker pattern
-MATCH (c:Company) WHERE c.va_ticker CONTAINS 'AAPL' RETURN c.company_name, c.cid, c.va_ticker LIMIT 10
-
-Example 10: Top performing companies this month
-MATCH (c:Company) WHERE c.this_month_change > 0 RETURN c.company_name, c.cid, c.this_month_change ORDER BY c.this_month_change DESC LIMIT 10
-
-Example 11: Companies in specific country by name
-MATCH (c:Company)-[:IN_COUNTRY]->(country:Country) WHERE country.name CONTAINS 'United States' RETURN c.company_name, c.cid, country.name LIMIT 10
-
-Example 12: Multiple sector companies
-MATCH (c:Company)-[:IN_SECTOR]->(s:Sector) WHERE s.name IN ['Technology', 'Health Care'] RETURN c.company_name, c.cid, s.name LIMIT 10
-
-Example 13: Companies with missing data (use OPTIONAL MATCH)
-MATCH (c:Company) OPTIONAL MATCH (c)-[:IN_SECTOR]->(s:Sector) WHERE s.name IS NULL RETURN c.company_name, c.cid LIMIT 10
-
-Example 14: Fuzzy industry matching
-MATCH (c:Company)-[:IN_INDUSTRY]->(i:Industry) WHERE i.name CONTAINS 'Tech' OR i.name CONTAINS 'Software' RETURN c.company_name, c.cid, i.name
-
-Example 15: Companies with specific currency
-MATCH (c:Company) WHERE c.base_currency = 'USD' RETURN c.company_name, c.cid, c.market_cap LIMIT 10
-
-Example 16: Show Total Revenue for Kajaria across FY-2024 quarters
-MATCH (c:Company {company_name: 'Kajaria Ceramics'})-[:HAS_PARAMETER]->(p:Parameter {parameter_name: 'Total revenue, Primary'})-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE pr.period CONTAINS 'FY-2024' RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth ORDER BY pr.period
-
-Example 17: Find parameters with positive growth in latest quarter
-MATCH (c:Company {company_name: 'Kajaria Ceramics'})-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE pr.period CONTAINS '3QFY-2024' AND pr.yoy_growth > 0 RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.yoy_growth ORDER BY pr.yoy_growth DESC LIMIT 10
-
-Example 18: Multi-period parameter comparison
-MATCH (c:Company {company_name: 'Kajaria Ceramics'})-[:HAS_PARAMETER]->(p:Parameter {parameter_name: 'Total revenue, Primary'})-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE pr.period IN ['1QFY-2024', '2QFY-2024', '3QFY-2024', '4QFY-2024'] RETURN c.company_name, p.parameter_name, pr.period, pr.value ORDER BY pr.period
-
-Question: {question}
-
-Cypher Query:"""
-        )
-        
-        self.cypher_chain = GraphCypherQAChain.from_llm(
-            ChatOpenAI(temperature=0),
-            graph=graph,
-            verbose=True,
-            cypher_prompt=cypher_prompt,
-            allow_dangerous_requests=True,
-        )
+        # Cypher chain is no longer needed (we use tool calling instead)
+        self.cypher_chain = None
     
     def _initialize_tool_calling(self):
         """Initialize tool calling infrastructure"""
@@ -315,6 +165,14 @@ Cypher Query:"""
             
             # Get sectors
             sectors_query = "MATCH (s:Sector) RETURN DISTINCT s.name ORDER BY s.name LIMIT 20"
+            # Ensure graph connection is available
+            if graph is None:
+                graph = get_graph()
+                if graph is None:
+                    if self.log_manager:
+                        self.log_manager.add_error_log('Neo4j not connected. Please ensure Neo4j is running.')
+                    return None
+            
             sectors_result = graph.query(sectors_query)
             schema_context['sectors'] = [row['s.name'] for row in sectors_result]
             
@@ -835,38 +693,34 @@ Cypher Query:"""
             if self.log_manager:
                 self.log_manager.add_info_log(f'Step 1: Generating Cypher query for: "{question}"')
             
-            # Route to appropriate generation method
-            if self.use_tool_calling:
-                complexity = self._assess_complexity(question)
-                
-                if complexity == "simple":
-                    # Use Tool Calling (current implementation)
-                    return self._generate_with_tools(question)
-                else:
-                    # Use ReAct for complex queries (future implementation)
-                    if self.log_manager:
-                        self.log_manager.add_info_log('Complex query detected - attempting ReAct (fallback to Tool Calling if not available)')
-                    
-                    # Initialize ReAct engine if not already done
-                    if self.react_engine is None and self.tool_registry:
-                        try:
-                            self.react_engine = ReActEngine(self.tool_registry, self.log_manager)
-                        except:
-                            pass
-                    
-                    # Use ReAct if available, otherwise fallback to Tool Calling
-                    if self.react_engine:
-                        try:
-                            return self.react_engine.generate_cypher(question)
-                        except NotImplementedError:
-                            if self.log_manager:
-                                self.log_manager.add_info_log('ReAct not yet implemented, using Tool Calling')
-                            return self._generate_with_tools(question)
-                    else:
-                        return self._generate_with_tools(question)
+            # Always use Tool Calling approach (monolithic approach removed)
+            complexity = self._assess_complexity(question)
             
-            # Fallback to existing monolithic prompt approach
-            return self._generate_with_monolithic_prompt(question)
+            if complexity == "simple":
+                # Use Tool Calling (current implementation)
+                return self._generate_with_tools(question)
+            else:
+                # Use ReAct for complex queries (future implementation)
+                if self.log_manager:
+                    self.log_manager.add_info_log('Complex query detected - attempting ReAct (fallback to Tool Calling if not available)')
+                
+                # Initialize ReAct engine if not already done
+                if self.react_engine is None and self.tool_registry:
+                    try:
+                        self.react_engine = ReActEngine(self.tool_registry, self.log_manager)
+                    except:
+                        pass
+                
+                # Use ReAct if available, otherwise fallback to Tool Calling
+                if self.react_engine:
+                    try:
+                        return self.react_engine.generate_cypher(question)
+                    except NotImplementedError:
+                        if self.log_manager:
+                            self.log_manager.add_info_log('ReAct not yet implemented, using Tool Calling')
+                        return self._generate_with_tools(question)
+                else:
+                    return self._generate_with_tools(question)
             
         except Exception as e:
             if self.log_manager:
@@ -886,8 +740,9 @@ Cypher Query:"""
         try:
             if not self.llm_with_tools:
                 if self.log_manager:
-                    self.log_manager.add_info_log('Tool calling not initialized, falling back to monolithic prompt')
-                return self._generate_with_monolithic_prompt(question)
+                    self.log_manager.add_error_log('Tool calling not initialized. Please check logs.')
+                # Return a simple fallback query
+                return "MATCH (c:Company) RETURN c.company_name, c.cid LIMIT 10"
             
             if self.log_manager:
                 self.log_manager.add_info_log('Using Tool Calling approach')
@@ -966,11 +821,30 @@ RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency
                         tool_call_id = getattr(tool_call, 'id', None) or (tool_call.get('id', '') if isinstance(tool_call, dict) else '')
                         
                         try:
+                            import time
+                            start_time = time.time()
+                            
                             if self.log_manager:
                                 self.log_manager.add_info_log(f'Executing tool: {tool_name} with args: {tool_args}')
                             
                             # Execute tool via registry
                             tool_result = self.tool_registry.execute_tool(tool_name, **tool_args)
+                            
+                            # Calculate duration
+                            duration_ms = int((time.time() - start_time) * 1000)
+                            
+                            # Log tool call details
+                            if self.log_manager and hasattr(self.log_manager, 'add_tool_call_log'):
+                                # Format response for display (truncate if too long)
+                                response_str = json.dumps(tool_result, indent=2)
+                                if len(response_str) > 500:
+                                    response_str = response_str[:500] + "\n... (truncated)"
+                                self.log_manager.add_tool_call_log(
+                                    tool_name=tool_name,
+                                    arguments=tool_args,
+                                    response=tool_result,
+                                    duration_ms=duration_ms
+                                )
                             
                             # Format result for LLM (LangChain format)
                             from langchain_core.messages import ToolMessage
@@ -1014,229 +888,15 @@ RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency
             
             # If we get here, tool calling didn't produce valid query
             if self.log_manager:
-                self.log_manager.add_info_log(f'Tool calling did not produce valid query, falling back to monolithic prompt')
-            return self._generate_with_monolithic_prompt(question)
+                self.log_manager.add_error_log('Tool calling did not produce valid query. Please check logs.')
+            # Return a simple fallback query
+            return "MATCH (c:Company) RETURN c.company_name, c.cid LIMIT 10"
             
         except Exception as e:
             if self.log_manager:
                 self.log_manager.add_error_log(f'Tool calling generation failed: {str(e)}', e)
-            # Fallback to monolithic prompt
-            return self._generate_with_monolithic_prompt(question)
-    
-    def _generate_with_monolithic_prompt(self, question: str) -> str:
-        """
-        Generate Cypher query using existing monolithic prompt approach
-        
-        This is the original implementation for backward compatibility
-        
-        Args:
-            question: Natural language question
-        
-        Returns:
-            Generated Cypher query string
-        """
-        try:
-            if self.log_manager:
-                self.log_manager.add_info_log('Using monolithic prompt approach (backward compatibility)')
-            
-            # Analyze question for parameter queries
-            question_lower = question.lower()
-            
-            # Detect if this is a parameter query (mentions parameter names and company names)
-            # Common parameter indicators: revenue, margin, profit, ebitda, net income, etc.
-            parameter_indicators = [
-                'revenue', 'margin', 'profit', 'ebitda', 'ebit', 'net income', 'expense', 
-                'cost', 'earnings', 'sales', 'gross', 'operating', 'parameter', 'metric',
-                'ratio', 'growth', 'yoy', 'qoq', 'percentage', 'percentage', 'ratio',
-                'receivable', 'payable', 'accounts', 'production', 'volume', 'capacity',
-                'quantity', 'units', 'output', 'asset', 'liability', 'equity'
-            ]
-            
-            is_parameter_query = any(indicator in question_lower for indicator in parameter_indicators)
-            
-            # Detect period keywords
-            has_latest_recent = 'latest' in question_lower or 'recent' in question_lower or 'current' in question_lower
-            has_specific_period = any(keyword in question_lower for keyword in ['q1', 'q2', 'q3', 'q4', 'fy-', 'quarter', 'annual', 'year'])
-            
-            if is_parameter_query:
-                if self.log_manager:
-                    self.log_manager.add_info_log(f'Detected parameter query - will use parameter-specific query pattern')
-                    if has_latest_recent:
-                        self.log_manager.add_info_log('Detected "latest/recent/current" - will fetch most recent period data')
-                    if has_specific_period:
-                        self.log_manager.add_info_log('Detected specific period - will filter by period')
-            
-            # Get dynamic schema context
-            schema_context = self.get_dynamic_schema_context()
-            available_values = ""
-            
-            if schema_context:
-                available_values = f"""
-SECTORS: {', '.join(schema_context['sectors'][:10])}
-INDUSTRIES: {', '.join(schema_context['industries'][:15])}
-COUNTRIES: {', '.join(schema_context['countries'][:10])}
-REGIONS: {', '.join(schema_context['regions'][:5])}
-EXCHANGES: {', '.join(schema_context['exchanges'][:10])}
-COMPANIES: {', '.join(schema_context['companies'][:20])}
-PARAMETERS: {', '.join(schema_context['parameters'][:25])}
-PERIODS: {', '.join(schema_context['periods'][:15])}
-"""
-            else:
-                available_values = "Schema context unavailable - use fuzzy matching with CONTAINS"
-            
-            # Use simple LLM call with basic string formatting
-            llm = ChatOpenAI(temperature=0)
-            schema = str(graph.get_schema)
-            
-            # Create prompt using .format() to avoid f-string evaluation issues
-            # Use double braces {{}} to escape literal braces in Cypher examples
-            formatted_prompt = """
-You are a Cypher query expert. You MUST generate ONLY Cypher queries. DO NOT return any natural language text, explanations, or apologies.
-
-Schema: {schema}
-
-Available Values: {available_values}
-
-ABSOLUTE REQUIREMENTS - VIOLATION WILL CAUSE ERRORS:
-1. Your response MUST start with "MATCH", "RETURN", "WITH", "OPTIONAL", "UNWIND", or "CALL"
-2. DO NOT include phrases like "I'm sorry", "I cannot", "Here is", "The query is", etc.
-3. DO NOT include any explanatory text before or after the Cypher query
-4. If you cannot generate a query, return a simple MATCH query that queries all companies: "MATCH (c:Company) RETURN c.company_name, c.cid LIMIT 10"
-5. ALWAYS generate a valid Cypher query - never refuse to generate one
-
-CRITICAL RULES:
-6. ALWAYS use EXTREMELY LENIENT fuzzy matching for ALL searches to handle typos, misspellings, and variations
-7. Use LIMIT 100 for general queries (sector, country, region, exchange), but DO NOT use LIMIT for industry-specific queries to get complete results
-8. Use multiple fuzzy matching techniques: CONTAINS, STARTS WITH, ENDS WITH, and partial word matching
-9. For company searches, use: WHERE c.company_name CONTAINS 'term' OR c.company_name STARTS WITH 'term' OR c.company_name ENDS WITH 'term'
-10. Handle common misspellings: "appolo" → "apollo", "hospitol" → "hospital", "tyre" → "tire", etc.
-11. Use case-insensitive matching and ignore special characters
-12. ALWAYS return comprehensive company details: company_name, cid, country, sector, industry, market_cap
-13. MANDATORY: Always include c.cid in RETURN clause for any company-related query
-14. When users ask for "details", "information", or specific company names, include ALL mapped relationships
-15. IMPORTANT: For software industry queries, use ONLY "Software" matching, NOT "tech" (to avoid matching Biotechnology)
-16. If exact match fails, try partial word matching (e.g., "app" matches "Apollo")
-17. FOR "latest" or "recent" queries: Use ORDER BY pr.period DESC LIMIT 1 (not WHERE pr.period = 'latest'). Remove period filters from WHERE clause.
-18. FOR period-based queries with "latest/recent": Return the most recent period available by sorting DESC and limiting to 1 result.
-19. FOR PARAMETER QUERIES: Always use fuzzy matching with CONTAINS for both company_name and parameter_name. Match using available parameter names from the database.
-20. FOR MULTIPLE PARAMETERS: Use UNION or multiple MATCH patterns to get different parameters for the same company.
-21. FOR MULTIPLE PERIODS: When querying multiple periods, filter with WHERE pr.period IN ['period1', 'period2'] or use CONTAINS for fiscal year patterns.
-22. ALWAYS return: company_name, parameter_name, period, value, currency, yoy_growth for parameter queries.
-
-PARAMETER QUERY EXAMPLES:
-Question: Which companies are in Technology?
-Cypher: MATCH (c:Company)-[:IN_SECTOR]->(s:Sector) WHERE s.name CONTAINS 'Technology' OR s.name CONTAINS 'tech' RETURN c.company_name, c.cid, c.market_cap, s.name as sector LIMIT 10
-
-Question: Find pharmaceutical companies
-Cypher: MATCH (c:Company)-[:IN_INDUSTRY]->(i:Industry) WHERE i.name CONTAINS 'Pharmaceutical' OR i.name CONTAINS 'pharma' OR i.name CONTAINS 'drug' RETURN c.company_name, c.cid, i.name as industry
-
-Question: Show me automotive industry companies
-Cypher: MATCH (c:Company)-[:IN_INDUSTRY]->(i:Industry) WHERE i.name CONTAINS 'Automotive' OR i.name CONTAINS 'Auto' RETURN c.company_name, c.cid, i.name as industry
-
-Question: Find software industry companies
-Cypher: MATCH (c:Company)-[:IN_INDUSTRY]->(i:Industry) WHERE i.name CONTAINS 'Software' RETURN c.company_name, c.cid, i.name as industry
-
-Question: Find Apollo Tyres company details (handles "appolo", "appollo", "apollo")
-Cypher: MATCH (c:Company)-[:IN_COUNTRY]->(country:Country), (c)-[:IN_SECTOR]->(s:Sector), (c)-[:IN_INDUSTRY]->(i:Industry) WHERE (c.company_name CONTAINS 'Apollo' OR c.company_name CONTAINS 'apollo' OR c.company_name CONTAINS 'appolo' OR c.company_name CONTAINS 'appollo') AND (c.company_name CONTAINS 'Tyre' OR c.company_name CONTAINS 'tyre' OR c.company_name CONTAINS 'tire') RETURN c.company_name, c.cid, country.name as country, s.name as sector, i.name as industry, c.market_cap LIMIT 10
-
-Question: Apollo Hospital details (handles "appllo", "hospitol", "hospital")
-Cypher: MATCH (c:Company)-[:IN_COUNTRY]->(country:Country), (c)-[:IN_SECTOR]->(s:Sector), (c)-[:IN_INDUSTRY]->(i:Industry) WHERE (c.company_name CONTAINS 'Apollo' OR c.company_name CONTAINS 'apollo' OR c.company_name CONTAINS 'appolo' OR c.company_name CONTAINS 'appollo' OR c.company_name CONTAINS 'appllo') AND (c.company_name CONTAINS 'Hospital' OR c.company_name CONTAINS 'hospital' OR c.company_name CONTAINS 'hospitol') RETURN c.company_name, c.cid, country.name as country, country.code as country_code, s.name as sector, i.name as industry, c.market_cap, c.description LIMIT 10
-
-Question: Indian tyre companies details
-Cypher: MATCH (c:Company)-[:IN_COUNTRY]->(country:Country), (c)-[:IN_SECTOR]->(s:Sector), (c)-[:IN_INDUSTRY]->(i:Industry) WHERE (country.name CONTAINS 'India' OR country.name CONTAINS 'indian') AND (c.company_name CONTAINS 'Tyre' OR c.company_name CONTAINS 'tyre' OR c.company_name CONTAINS 'tire') RETURN c.company_name, c.cid, country.name as country, s.name as sector, i.name as industry, c.market_cap
-
-Question: Company details for [company name] (ultra-lenient matching)
-Cypher: MATCH (c:Company)-[:IN_COUNTRY]->(country:Country), (c)-[:IN_SECTOR]->(s:Sector), (c)-[:IN_INDUSTRY]->(i:Industry) WHERE c.company_name CONTAINS '[company_name]' OR c.company_name STARTS WITH '[company_name]' OR c.company_name ENDS WITH '[company_name]' RETURN c.company_name, c.cid, country.name as country, country.code as country_code, s.name as sector, i.name as industry, c.market_cap, c.description LIMIT 10
-
-Question: Total revenue of Kajaria
-Cypher: MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE c.company_name CONTAINS 'Kajaria' AND (p.parameter_name CONTAINS 'Total revenue' OR p.parameter_name CONTAINS 'Revenue') RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth ORDER BY pr.period DESC
-
-Question: Total revenue of Kajaria for FY-2024
-Cypher: MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE c.company_name CONTAINS 'Kajaria' AND (p.parameter_name CONTAINS 'Total revenue' OR p.parameter_name CONTAINS 'Revenue') AND pr.period CONTAINS 'FY-2024' RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth ORDER BY pr.period
-
-Question: EBITDA margin of Kajaria latest
-Cypher: MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE c.company_name CONTAINS 'Kajaria' AND (p.parameter_name CONTAINS 'EBITDA margin' OR p.parameter_name CONTAINS 'margin') RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth ORDER BY pr.period DESC LIMIT 1
-
-Question: EBITDA margin and Net profit for Kajaria in Q3FY-2024
-Cypher: MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE c.company_name CONTAINS 'Kajaria' AND pr.period CONTAINS '3QFY-2024' AND (p.parameter_name CONTAINS 'EBITDA margin' OR p.parameter_name CONTAINS 'Net profit' OR p.parameter_name CONTAINS 'Profit') RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth ORDER BY p.parameter_name
-
-Question: Accounts receivable of Kajaria in 2QFY-2025
-Cypher: MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE c.company_name CONTAINS 'Kajaria' AND p.parameter_name CONTAINS 'Accounts receivable' AND pr.period CONTAINS '2QFY-2025' RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth ORDER BY p.parameter_name
-
-Question: Show me Total revenue and EBITDA margin for Kajaria across all FY-2024 quarters
-Cypher: MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE c.company_name CONTAINS 'Kajaria' AND pr.period CONTAINS 'FY-2024' AND (p.parameter_name CONTAINS 'Total revenue' OR p.parameter_name CONTAINS 'EBITDA margin' OR p.parameter_name CONTAINS 'Revenue' OR p.parameter_name CONTAINS 'margin') RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth ORDER BY pr.period, p.parameter_name
-
-Question: Revenue, Profit, and EBITDA margin of [any company] latest
-Cypher: MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE c.company_name CONTAINS '[company]' AND (p.parameter_name CONTAINS 'Revenue' OR p.parameter_name CONTAINS 'Profit' OR p.parameter_name CONTAINS 'EBITDA margin' OR p.parameter_name CONTAINS 'margin' OR p.parameter_name CONTAINS 'EBITDA') WITH c, p, pr, ROW_NUMBER() OVER (PARTITION BY p.parameter_name ORDER BY pr.period DESC) as rn WHERE rn = 1 RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth ORDER BY p.parameter_name
-
-Question: What are the parameters for Kajaria in 3QFY-2024 and 4QFY-2024
-Cypher: MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE c.company_name CONTAINS 'Kajaria' AND (pr.period CONTAINS '3QFY-2024' OR pr.period CONTAINS '4QFY-2024') RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth ORDER BY pr.period, p.parameter_name
-
-Question: All parameters for [company] latest quarter
-Cypher: MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE c.company_name CONTAINS '[company]' WITH c, pr, MAX(pr.period) as latest_period MATCH (c)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE pr.period = latest_period RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth ORDER BY p.parameter_name
-
-Question: {{question}}
-Cypher:""".format(schema=schema, available_values=available_values, question=question)
-            response = llm.invoke(formatted_prompt)
-            
-            # Extract just the Cypher query
-            raw_response = response.content.strip()
-            
-            # Extract Cypher query from response (handle cases where LLM adds explanations)
-            cypher_query = self._extract_cypher_query(raw_response)
-            
-            # Check if the query matches the question intent (especially for parameter queries)
-            if self._is_parameter_question(question):
-                if not self._query_has_parameters(cypher_query):
-                    if self.log_manager:
-                        self.log_manager.add_info_log(f'[WARNING] Generated query does not match parameter question intent, using query decomposition')
-                    # Use query decomposition for better accuracy
-                    decomposition = self._decompose_parameter_query(question)
-                    if self.log_manager:
-                        self.log_manager.add_info_log(f'Query decomposition: {decomposition}')
-                    cypher_query = self._generate_decomposed_query(decomposition)
-                elif self._is_valid_cypher(cypher_query):
-                    # Even if query has parameters, validate it has the right structure
-                    # Use decomposition as a fallback check
-                    decomposition = self._decompose_parameter_query(question)
-                    # Check if decomposition suggests a different structure is needed
-                    if decomposition['company'] and decomposition['parameters']:
-                        # Verify the query includes the company and parameters
-                        query_lower = cypher_query.lower()
-                        company_word = decomposition['company'].split()[0].lower()
-                        if company_word not in query_lower:
-                            if self.log_manager:
-                                self.log_manager.add_info_log(f'[WARNING] Query missing company match, regenerating with decomposition')
-                            cypher_query = self._generate_decomposed_query(decomposition)
-            
-            # Validate that it's actually a Cypher query
-            if not self._is_valid_cypher(cypher_query):
-                if self.log_manager:
-                    self.log_manager.add_info_log(f'[WARNING] LLM returned invalid Cypher query, attempting to fix...')
-                    self.log_manager.add_info_log(f'Raw response: {raw_response[:200]}')
-                
-                # Try to extract Cypher from the response
-                cypher_query = self._extract_cypher_from_text(raw_response)
-                
-                # If still invalid, generate a fallback query
-                if not self._is_valid_cypher(cypher_query):
-                    if self.log_manager:
-                        self.log_manager.add_info_log(f'[WARNING] LLM response was invalid, generating smart fallback query for question: {question[:100]}')
-                        self.log_manager.add_info_log(f'Invalid response was: {raw_response[:300]}')
-                    cypher_query = self._generate_fallback_query(question)
-                    if self.log_manager:
-                        self.log_manager.add_info_log(f'Generated fallback query: {cypher_query[:200]}')
-            
-            if self.log_manager:
-                self.log_manager.add_info_log(f'Step 1 Complete: Generated Cypher query')
-                self.log_manager.add_info_log(f'🔍 Generated Cypher Query:\n{cypher_query}')
-            
-            return cypher_query
-            
-        except Exception as e:
-            if self.log_manager:
-                self.log_manager.add_error_log(f'Cypher generation failed: {str(e)}', e)
-            raise
+            # Return a simple fallback query
+            return "MATCH (c:Company) RETURN c.company_name, c.cid LIMIT 10"
     
     def execute_cypher_query(self, cypher_query: str) -> list:
         """
@@ -1389,95 +1049,165 @@ Cypher:""".format(schema=schema, available_values=available_values, question=que
             if self.log_manager:
                 self.log_manager.add_info_log(f'Step 4: Synthesizing final answer with LLM')
             
+            # Detect query type based on result structure
+            is_company_details_query = False
+            is_parameter_query = False
+            
+            if structured_results and len(structured_results) > 0:
+                first_result = structured_results[0]
+                if isinstance(first_result, dict):
+                    # Check if this is a company details query (has country, sector, industry, etc.)
+                    has_company_fields = any(key in first_result for key in ['country', 'sector', 'industry', 'country_code', 's.name', 'i.name'])
+                    has_parameter_fields = any(key in first_result for key in ['p.parameter_name', 'parameter_name', 'pr.period', 'pr.value'])
+                    
+                    is_company_details_query = has_company_fields and not has_parameter_fields
+                    is_parameter_query = has_parameter_fields
+            
             # Format structured results in a clear, readable format
             structured_data = ""
             if structured_results:
-                # Group results by parameter and deduplicate by period-value-currency combination
-                params_found = {}
-                periods_found = set()
-                seen_combinations = {}  # Track seen period+value+currency combinations to deduplicate
-                
-                for result in structured_results:
-                    if isinstance(result, dict):
-                        param_name = result.get('p.parameter_name', result.get('parameter_name', 'Unknown'))
-                        period = result.get('pr.period', result.get('period', 'Unknown'))
-                        value = result.get('pr.value', result.get('value', 'N/A'))
-                        currency = result.get('pr.currency', result.get('currency', 'N/A'))
-                        yoy_growth = result.get('pr.yoy_growth', result.get('yoy_growth', 'N/A'))
-                        
-                        # Create unique key that includes parameter name to keep similar parameters separate
-                        # Use exact value (not rounded) to preserve distinct values even if close
-                        # This ensures "Accounts receivable" and "Accounts receivable, Average" are shown separately
-                        if isinstance(value, (int, float)):
-                            value_key = str(value)  # Keep exact value for uniqueness
-                        else:
-                            value_key = str(value)
-                        
-                        # Include parameter name in unique key so similar parameters are kept distinct
-                        unique_key = f"{param_name}|{period}|{value_key}|{currency}"
-                        
-                        # Only add if we haven't seen this exact combination before
-                        # Different parameter names with same period+value will be shown separately
-                        if unique_key not in seen_combinations:
-                            seen_combinations[unique_key] = True
-                            periods_found.add(period)
+                if is_company_details_query:
+                    # Handle company details query results
+                    if self.log_manager:
+                        self.log_manager.add_info_log('Detected company details query - formatting company information')
+                    
+                    companies_info = []
+                    for result in structured_results:
+                        if isinstance(result, dict):
+                            company_name = result.get('c.company_name', result.get('company_name', 'Unknown'))
+                            cid = result.get('c.cid', result.get('cid', 'N/A'))
+                            country = result.get('country', result.get('country.name', 'N/A'))
+                            country_code = result.get('country_code', result.get('country.code', result.get('country_code', 'N/A')))
+                            sector = result.get('sector', result.get('s.name', 'N/A'))
+                            industry = result.get('industry', result.get('i.name', 'N/A'))
+                            market_cap = result.get('c.market_cap', result.get('market_cap', 'N/A'))
+                            description = result.get('c.description', result.get('description', 'N/A'))
                             
-                            if param_name not in params_found:
-                                params_found[param_name] = []
-                            
-                            params_found[param_name].append({
-                                'period': period,
-                                'value': value,
-                                'currency': currency,
-                                'yoy_growth': yoy_growth
-                            })
-                
-                # Calculate total deduplicated records
-                total_deduped_records = sum(len(records) for records in params_found.values())
-                
-                # Format as readable data
-                structured_data = f"Found {total_deduped_records} unique data records (after deduplication):\n\n"
-                company_name = structured_results[0].get('c.company_name', structured_results[0].get('company_name', 'Unknown'))
-                structured_data += f"Company: {company_name}\n"
-                structured_data += f"Periods in data: {', '.join(sorted(periods_found))}\n\n"
-                
-                # Check if we have multiple similar parameter names (e.g., "Accounts receivable" and "Accounts receivable, Average")
-                has_similar_params = len(params_found) > 1
-                similar_param_base = None
-                if has_similar_params:
-                    # Check if parameters share a common base name
-                    param_names = list(params_found.keys())
-                    first_base = param_names[0].split(',')[0].strip()
-                    if all(p.split(',')[0].strip() == first_base for p in param_names):
-                        similar_param_base = first_base
-                        has_similar_params = True
-                
-                # Group records by parameter for better table structure
-                for param_name, records in params_found.items():
-                    structured_data += f"\nParameter: {param_name} ({len(records)} unique records)\n"
-                    # Sort records by period for chronological order
-                    sorted_records = sorted(records[:20], key=lambda x: x['period'])  # Limit to 20 per parameter, sorted
-                    for record in sorted_records:
-                        # Format value with proper decimal places
-                        value = record['value']
-                        if isinstance(value, (int, float)):
-                            if abs(value) >= 1000000:
-                                formatted_value = f"{value:,.2f}"
-                            else:
-                                formatted_value = f"{value:.2f}"
-                        else:
-                            formatted_value = str(value)
-                        
-                        structured_data += f"  - Period: {record['period']}, Value: {formatted_value}, Currency: {record['currency']}"
-                        if record['yoy_growth'] != 'N/A' and record['yoy_growth'] is not None:
-                            growth_value = record['yoy_growth']
-                            if isinstance(growth_value, (int, float)):
-                                structured_data += f", YoY Growth: {growth_value:.2f}%"
-                            else:
-                                structured_data += f", YoY Growth: {growth_value}%"
+                            company_info = {
+                                'company_name': company_name,
+                                'cid': cid,
+                                'country': country,
+                                'country_code': country_code,
+                                'sector': sector,
+                                'industry': industry,
+                                'market_cap': market_cap,
+                                'description': description
+                            }
+                            companies_info.append(company_info)
+                    
+                    structured_data = f"Found {len(companies_info)} company record(s):\n\n"
+                    for company in companies_info:
+                        structured_data += f"Company: {company['company_name']}\n"
+                        structured_data += f"  Company ID: {company['cid']}\n"
+                        structured_data += f"  Country: {company['country']} ({company['country_code']})\n"
+                        structured_data += f"  Sector: {company['sector']}\n"
+                        structured_data += f"  Industry: {company['industry']}\n"
+                        if company['market_cap'] != 'N/A' and company['market_cap']:
+                            formatted_cap = f"{company['market_cap']:,.0f}" if isinstance(company['market_cap'], (int, float)) else str(company['market_cap'])
+                            structured_data += f"  Market Cap: {formatted_cap}\n"
+                        if company['description'] and company['description'] != 'N/A':
+                            desc = str(company['description'])[:200] + "..." if len(str(company['description'])) > 200 else str(company['description'])
+                            structured_data += f"  Description: {desc}\n"
                         structured_data += "\n"
                 
-                structured_data += f"\nTotal: {len(structured_results)} records found across {len(params_found)} parameters.\n"
+                elif is_parameter_query:
+                    # Handle parameter query results (original logic)
+                    # Group results by parameter and deduplicate by period-value-currency combination
+                    params_found = {}
+                    periods_found = set()
+                    seen_combinations = {}  # Track seen period+value+currency combinations to deduplicate
+                    
+                    for result in structured_results:
+                        if isinstance(result, dict):
+                            param_name = result.get('p.parameter_name', result.get('parameter_name', 'Unknown'))
+                            period = result.get('pr.period', result.get('period', 'Unknown'))
+                            value = result.get('pr.value', result.get('value', 'N/A'))
+                            currency = result.get('pr.currency', result.get('currency', 'N/A'))
+                            yoy_growth = result.get('pr.yoy_growth', result.get('yoy_growth', 'N/A'))
+                            
+                            # Create unique key that includes parameter name to keep similar parameters separate
+                            # Use exact value (not rounded) to preserve distinct values even if close
+                            # This ensures "Accounts receivable" and "Accounts receivable, Average" are shown separately
+                            if isinstance(value, (int, float)):
+                                value_key = str(value)  # Keep exact value for uniqueness
+                            else:
+                                value_key = str(value)
+                            
+                            # Include parameter name in unique key so similar parameters are kept distinct
+                            unique_key = f"{param_name}|{period}|{value_key}|{currency}"
+                            
+                            # Only add if we haven't seen this exact combination before
+                            # Different parameter names with same period+value will be shown separately
+                            if unique_key not in seen_combinations:
+                                seen_combinations[unique_key] = True
+                                periods_found.add(period)
+                                
+                                if param_name not in params_found:
+                                    params_found[param_name] = []
+                                
+                                params_found[param_name].append({
+                                    'period': period,
+                                    'value': value,
+                                    'currency': currency,
+                                    'yoy_growth': yoy_growth
+                                })
+                    
+                    # Calculate total deduplicated records
+                    total_deduped_records = sum(len(records) for records in params_found.values())
+                    
+                    # Format as readable data
+                    structured_data = f"Found {total_deduped_records} unique data records (after deduplication):\n\n"
+                    company_name = structured_results[0].get('c.company_name', structured_results[0].get('company_name', 'Unknown'))
+                    structured_data += f"Company: {company_name}\n"
+                    structured_data += f"Periods in data: {', '.join(sorted(periods_found))}\n\n"
+                    
+                    # Check if we have multiple similar parameter names (e.g., "Accounts receivable" and "Accounts receivable, Average")
+                    has_similar_params = len(params_found) > 1
+                    similar_param_base = None
+                    if has_similar_params:
+                        # Check if parameters share a common base name
+                        param_names = list(params_found.keys())
+                        first_base = param_names[0].split(',')[0].strip()
+                        if all(p.split(',')[0].strip() == first_base for p in param_names):
+                            similar_param_base = first_base
+                            has_similar_params = True
+                    
+                    # Group records by parameter for better table structure
+                    for param_name, records in params_found.items():
+                        structured_data += f"\nParameter: {param_name} ({len(records)} unique records)\n"
+                        # Sort records by period for chronological order
+                        sorted_records = sorted(records[:20], key=lambda x: x['period'])  # Limit to 20 per parameter, sorted
+                        for record in sorted_records:
+                            # Format value with proper decimal places
+                            value = record['value']
+                            if isinstance(value, (int, float)):
+                                if abs(value) >= 1000000:
+                                    formatted_value = f"{value:,.2f}"
+                                else:
+                                    formatted_value = f"{value:.2f}"
+                            else:
+                                formatted_value = str(value)
+                            
+                            structured_data += f"  - Period: {record['period']}, Value: {formatted_value}, Currency: {record['currency']}"
+                            if record['yoy_growth'] != 'N/A' and record['yoy_growth'] is not None:
+                                growth_value = record['yoy_growth']
+                                if isinstance(growth_value, (int, float)):
+                                    structured_data += f", YoY Growth: {growth_value:.2f}%"
+                                else:
+                                    structured_data += f", YoY Growth: {growth_value}%"
+                            structured_data += "\n"
+                    
+                    structured_data += f"\nTotal: {len(structured_results)} records found across {len(params_found)} parameters.\n"
+                else:
+                    # Generic query - format all fields
+                    if self.log_manager:
+                        self.log_manager.add_info_log('Unknown query type - formatting all fields')
+                    structured_data = f"Found {len(structured_results)} record(s):\n\n"
+                    for i, result in enumerate(structured_results[:10], 1):
+                        structured_data += f"Record {i}:\n"
+                        for key, value in result.items():
+                            structured_data += f"  {key}: {value}\n"
+                        structured_data += "\n"
             else:
                 structured_data = "No structured data records found."
             
@@ -1491,7 +1221,58 @@ Cypher:""".format(schema=schema, available_values=available_values, question=que
             else:
                 results_indicator = "No data records found in database."
             
-            synthesis_prompt = f"""
+            # Create synthesis prompt based on query type
+            if is_company_details_query:
+                synthesis_prompt = f"""
+Based ONLY on the structured data provided below, answer the user's question about company details.
+
+Question: {question}
+
+{results_indicator}
+
+Structured Data:
+{structured_data if structured_data.strip() else "No structured data records found."}
+
+CRITICAL RULES - FOLLOW EXACTLY:
+1. If you see "Found X company record(s)" above, DATA EXISTS - present it immediately
+2. NEVER say "No data found", "no information", "no specific data" if structured data shows company records
+3. Format the answer as a clear, readable company information summary
+4. Use the EXACT company name from the data - do not modify or abbreviate it
+5. Present company details in this format:
+
+## Company Details: [Company Name]
+
+**Basic Information:**
+- Company ID: [cid]
+- Country: [country] ([country_code])
+- Sector: [sector]
+- Industry: [industry]
+- Market Cap: [market_cap] (if available)
+
+**Description:**
+[description if available]
+
+6. If multiple companies match, create separate sections for each
+7. Use the EXACT values from structured data - do not make up information
+8. If market cap is available, format it with commas (e.g., 1,234,567,890)
+9. If description is too long, summarize it but keep key information
+
+Example format:
+## Company Details: Kajaria Ceramics
+
+**Basic Information:**
+- Company ID: 18315
+- Country: India (IN)
+- Sector: Materials
+- Industry: Building Products
+- Market Cap: 45,678,900,000
+
+**Description:**
+Kajaria Ceramics is a leading manufacturer of ceramic tiles...
+
+Answer (provide complete company details from the data):"""
+            else:
+                synthesis_prompt = f"""
 Based ONLY on the structured data provided below, answer the user's question.
 
 Question: {question}
@@ -1530,6 +1311,7 @@ IMPORTANT: Always include "Period" as a column. If multiple similar parameter na
 9. Use actual numbers from the structured data - do not generalize
 10. If {len(structured_results)} records are shown above, create tables with ALL that data
 11. IMPORTANT: Do NOT combine or deduplicate similar parameter names - if "Accounts receivable" and "Accounts receivable, Average" both exist, show them as separate rows with their respective values
+12. Use the EXACT company name from the data - do not use "Unknown" or make up names
 
 Example format:
 ## Accounts receivable for Kajaria Ceramics for FY-2025
@@ -1641,10 +1423,9 @@ Answer (create markdown table format if data exists, otherwise say data not foun
                 self.log_manager.add_info_log('Tool calling enabled')
     
     def disable_tool_calling(self):
-        """Disable tool calling (fallback to monolithic prompt)"""
-        self.use_tool_calling = False
+        """Disable tool calling (not supported - tool calling is now the only method)"""
         if self.log_manager:
-            self.log_manager.add_info_log('Tool calling disabled - using monolithic prompt')
+            self.log_manager.add_info_log('Warning: Tool calling cannot be disabled - it is the only supported method')
 
 
 # Update the original GraphRAG import to use PEERS version

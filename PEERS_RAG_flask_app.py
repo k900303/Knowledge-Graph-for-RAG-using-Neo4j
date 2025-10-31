@@ -101,6 +101,22 @@ class LogManager:
         
         self.add_log('info', message, file_info)
     
+    def add_tool_call_log(self, tool_name, arguments, response, duration_ms=None):
+        """Add a tool calling log with tool name, arguments, and response"""
+        timestamp = time.strftime("%H:%M:%S")
+        log_entry = {
+            'timestamp': timestamp,
+            'type': 'tool_call',
+            'tool_name': tool_name,
+            'arguments': arguments,
+            'response': response,
+            'duration_ms': duration_ms
+        }
+        self.logs.append(log_entry)
+        # Send to all listeners
+        for listener in self.listeners:
+            listener(log_entry)
+    
     def subscribe(self, callback):
         """Subscribe to log updates"""
         self.listeners.append(callback)
@@ -113,15 +129,11 @@ class LogManager:
 log_manager = LogManager()
 
 
-def init_rag(use_tool_calling=False):
-    """Initialize RAG systems"""
+def init_rag(use_tool_calling=True):
+    """Initialize RAG systems (tool calling is now default)"""
     global graph_rag, vector_rag
     if graph_rag is None:
-        log_manager.add_info_log(f'Creating GraphRAG instance (tool_calling={use_tool_calling})...')
-        graph_rag = PEERSGraphRAG(log_manager, use_tool_calling=use_tool_calling)
-    elif graph_rag.use_tool_calling != use_tool_calling:
-        # Reinitialize if tool calling preference changed
-        log_manager.add_info_log(f'Reinitializing GraphRAG with tool_calling={use_tool_calling}...')
+        log_manager.add_info_log('Creating GraphRAG instance with Tool Calling (default)...')
         graph_rag = PEERSGraphRAG(log_manager, use_tool_calling=use_tool_calling)
     if vector_rag is None:
         log_manager.add_info_log('Creating VectorRAG instance...')
@@ -167,20 +179,16 @@ def stream_logs():
 
 @app.route('/api/init', methods=['POST'])
 def api_init():
-    """Initialize RAG systems"""
+    """Initialize RAG systems (tool calling is now default)"""
     try:
-        data = request.json or {}
-        use_tool_calling = data.get('use_tool_calling', False)
+        log_manager.add_info_log('Starting RAG systems initialization (Tool Calling: enabled by default)...')
+        init_rag(use_tool_calling=True)
         
-        log_manager.add_info_log(f'Starting RAG systems initialization (tool_calling={use_tool_calling})...')
-        init_rag(use_tool_calling=use_tool_calling)
-        
-        tool_status = "enabled" if use_tool_calling else "disabled"
-        log_manager.add_log('success', f'RAG systems initialized successfully (Tool Calling: {tool_status})')
+        log_manager.add_log('success', 'RAG systems initialized successfully (Tool Calling: enabled)')
         return jsonify({
             'status': 'success', 
-            'message': f'RAG systems initialized (Tool Calling: {tool_status})',
-            'tool_calling_enabled': use_tool_calling
+            'message': 'RAG systems initialized successfully (Tool Calling: enabled by default)',
+            'tool_calling_enabled': True
         })
     except Exception as e:
         log_manager.add_error_log(f'RAG initialization failed: {str(e)}', e)
@@ -194,26 +202,18 @@ def api_query():
         data = request.json
         query = data.get('query', '')
         mode = data.get('mode', 'GraphRAG')
-        use_tool_calling = data.get('use_tool_calling', False)
         
-        log_manager.add_info_log(f'Received query: "{query}" in {mode} mode (tool_calling={use_tool_calling})')
+        log_manager.add_info_log(f'Received query: "{query}" in {mode} mode (Tool Calling: enabled by default)')
         
         if not query:
             log_manager.add_error_log('Query is empty')
             return jsonify({'status': 'error', 'message': 'Query is required'}), 400
         
-        # Ensure RAG systems are initialized
-        log_manager.add_info_log(f'Initializing RAG systems (tool_calling={use_tool_calling})...')
-        init_rag(use_tool_calling=use_tool_calling)
+        # Ensure RAG systems are initialized (tool calling is default)
+        log_manager.add_info_log('Initializing RAG systems (Tool Calling: enabled by default)...')
+        init_rag(use_tool_calling=True)
         
-        # If GraphRAG is initialized and tool calling preference changed, update it
-        if graph_rag and graph_rag.use_tool_calling != use_tool_calling:
-            if use_tool_calling:
-                graph_rag.enable_tool_calling()
-            else:
-                graph_rag.disable_tool_calling()
-        
-        log_manager.add_log('success', 'RAG systems ready')
+        log_manager.add_log('success', 'RAG systems ready (Tool Calling: enabled)')
         
         # Execute query
         log_manager.add_info_log(f'Executing {mode} query...')

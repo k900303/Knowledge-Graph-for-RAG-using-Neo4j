@@ -26,6 +26,45 @@ poetry install
 ```
 Use main.py to run the application
 
+## 🚀 Running the Web Application
+
+### Quick Start
+
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements_web.txt
+   ```
+
+2. **Start the server:**
+   ```bash
+   python run_web_app.py
+   ```
+
+3. **Access the web app:**
+   ```
+   http://localhost:5000
+   ```
+
+4. **Test the application:**
+   - Click "🔍 Test Connections" to verify all systems
+   - Click "⚙️ Initialize RAG Systems" to start
+   - Enter a query and click "🚀 Submit Query"
+
+### Using Tool Calling (NEW!)
+
+The web app now supports **Tool Calling** mode for improved accuracy and token efficiency:
+
+1. **Enable Tool Calling:**
+   - Check the "Enable Tool Calling" checkbox in Advanced Options
+   - Click "Initialize RAG Systems"
+   - Tool calling uses semantic search for dynamic parameter discovery (80% token reduction)
+
+2. **See it in action:**
+   - Check "Live System Logs" to see tool execution
+   - Try queries like: "Show me revenue and margin for Kajaria"
+
+For detailed instructions, see: [START_SERVER_GUIDE.md](START_SERVER_GUIDE.md)
+
 ### Using Your Own Data
 If you want to use your personal data, follow these steps:
 
