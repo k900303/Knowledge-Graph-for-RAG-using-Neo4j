@@ -185,9 +185,93 @@
 
         .result-content {
             white-space: pre-wrap;
-            font-family: 'Courier New', monospace;
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             color: #1f2937;
-            line-height: 1.6;
+            line-height: 1.8;
+        }
+
+        /* Beautiful table styling for parameter results */
+        .result-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        .result-content table thead {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            color: white;
+        }
+
+        .result-content table th {
+            padding: 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .result-content table td {
+            padding: 14px 16px;
+            border-bottom: 1px solid #E5E7EB;
+            color: #374151;
+            font-size: 0.95rem;
+        }
+
+        .result-content table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .result-content table tbody tr:hover {
+            background-color: #F9FAFB;
+            transition: background-color 0.2s ease;
+        }
+
+        .result-content table tbody tr:nth-child(even) {
+            background-color: #FAFBFC;
+        }
+
+        .result-content h2 {
+            color: #111827;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 24px 0 16px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #E5E7EB;
+        }
+
+        .result-content .value-cell {
+            font-weight: 600;
+            color: #059669;
+            font-family: 'Courier New', monospace;
+        }
+
+        .result-content .growth-positive {
+            color: #059669;
+            font-weight: 600;
+        }
+
+        .result-content .growth-negative {
+            color: #DC2626;
+            font-weight: 600;
+        }
+
+        .result-content .growth-zero {
+            color: #6B7280;
+        }
+
+        .result-content .period-cell {
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .result-content .currency-cell {
+            color: #6B7280;
+            font-size: 0.9rem;
         }
 
         .loading {
@@ -492,6 +576,17 @@
                     <label><input type="radio" name="mode" value="VectorRAG"> VectorRAG (Semantic)</label>
                 </div>
 
+                <div class="radio-group" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                    <h3 style="margin-bottom: 15px; color: #2563eb;">⚙️ Advanced Options:</h3>
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" id="useToolCalling" style="margin-right: 8px; cursor: pointer;">
+                        <span>Enable Tool Calling</span>
+                    </label>
+                    <small style="display: block; margin-top: 8px; color: #6b7280; font-size: 0.85rem; padding-left: 24px;">
+                        Uses semantic search for parameters (80% token reduction)
+                    </small>
+                </div>
+
                 <div class="example-queries">
                     <h3>💡 Examples</h3>
                     <button class="example-btn" onclick="setQuery('Which companies are in the Technology sector?')">Tech companies</button>
@@ -748,16 +843,21 @@
         }
 
         function initRAG() {
-            showAlert('Initializing RAG systems...', 'info');
+            const useToolCalling = document.getElementById('useToolCalling').checked;
+            const statusMsg = useToolCalling ? 'with Tool Calling enabled' : '';
+            showAlert(`Initializing RAG systems ${statusMsg}...`, 'info');
+            
             fetch('/api/init', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'}
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({use_tool_calling: useToolCalling})
             })
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
                     isInitialized = true;
-                    showAlert('✅ RAG systems initialized successfully!', 'success');
+                    const toolStatus = data.tool_calling_enabled ? ' (Tool Calling: Enabled)' : '';
+                    showAlert('✅ RAG systems initialized successfully!' + toolStatus, 'success');
                 } else {
                     showAlert('❌ ' + data.message, 'error');
                 }
@@ -803,6 +903,7 @@
             }
 
             const mode = document.querySelector('input[name="mode"]:checked').value;
+            const useToolCalling = document.getElementById('useToolCalling').checked;
             
             showAlert('Processing query...', 'info');
             
@@ -812,16 +913,27 @@
             fetch('/api/query', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({query: query, mode: mode})
+                body: JSON.stringify({
+                    query: query, 
+                    mode: mode,
+                    use_tool_calling: useToolCalling
+                })
             })
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
+                    // Check if result contains markdown table format
+                    let formattedResult = data.result;
+                    if (data.result.includes('|') && data.result.includes('---')) {
+                        // Convert markdown table to HTML table
+                        formattedResult = formatMarkdownTable(data.result);
+                    }
+                    
                     document.getElementById('resultContent').innerHTML = 
                         `<div><strong>Query:</strong> ${data.query}</div>
                          <div style="color: #6b7280; margin: 10px 0;"><strong>Mode:</strong> ${data.mode}</div>
                          <hr style="margin: 15px 0;">
-                         <div class="result-content">${data.result}</div>`;
+                         <div class="result-content">${formattedResult}</div>`;
                     
                     // Add to history
                     queryHistory.unshift({
@@ -864,6 +976,194 @@
                     <small>${item.result.substring(0, 100)}...</small>
                 </div>`
             ).join('');
+        }
+
+        // Format markdown table to beautiful HTML table
+        function formatMarkdownTable(text) {
+            // Check if text contains markdown table
+            if (!text.includes('|') || !text.includes('---')) {
+                return text;
+            }
+
+            // Split by lines
+            const lines = text.split('\n');
+            let inTable = false;
+            let tableHtml = '';
+            let formattedText = '';
+            let headerCells = [];
+            let columnCount = 0;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                
+                // Detect markdown headers (##)
+                if (line.startsWith('##')) {
+                    const headerText = line.replace('##', '').trim();
+                    formattedText += `<h2>${headerText}</h2>\n`;
+                    continue;
+                }
+                
+                // Detect table start (line with | and header separator on next line)
+                if (line.includes('|') && i + 1 < lines.length && lines[i + 1].trim().includes('---')) {
+                    inTable = true;
+                    tableHtml = '<table><thead><tr>';
+                    
+                    // Process header row - preserve all cells properly
+                    const headerRow = line.split('|');
+                    headerCells = [];
+                    
+                    // Extract all cells, filtering out empty edge cells but preserving structure
+                    for (let j = 0; j < headerRow.length; j++) {
+                        const cell = headerRow[j].trim();
+                        // Skip leading/trailing empty cells but keep all internal cells
+                        if (j === 0 && !cell) continue; // Skip leading empty
+                        if (j === headerRow.length - 1 && !cell) continue; // Skip trailing empty
+                        headerCells.push(cell);
+                    }
+                    
+                    // Build header with proper columns
+                    headerCells.forEach(cell => {
+                        tableHtml += `<th>${cell}</th>`;
+                    });
+                    tableHtml += '</tr></thead><tbody>';
+                    columnCount = headerCells.length;
+                    
+                    // Skip separator line
+                    i++;
+                    continue;
+                }
+                
+                // Process table rows
+                if (inTable && line.includes('|')) {
+                    const rowCells = line.split('|');
+                    const processedCells = [];
+                    
+                    // Extract cells, matching the header structure
+                    for (let j = 0; j < rowCells.length; j++) {
+                        const cell = rowCells[j].trim();
+                        // Skip leading/trailing empty cells but keep all internal cells
+                        if (j === 0 && !cell) continue; // Skip leading empty
+                        if (j === rowCells.length - 1 && !cell) continue; // Skip trailing empty
+                        processedCells.push(cell);
+                    }
+                    
+                    // Ensure we have the correct number of cells to match headers
+                    while (processedCells.length < columnCount) {
+                        processedCells.push('');
+                    }
+                    // Trim excess cells if more than expected
+                    if (processedCells.length > columnCount) {
+                        processedCells.splice(columnCount);
+                    }
+                    
+                    if (processedCells.length > 0) {
+                        tableHtml += '<tr>';
+                        
+                        // Process each cell based on header position and content
+                        processedCells.forEach((cell, index) => {
+                            if (index >= columnCount) return; // Skip extra cells beyond header
+                            
+                            const cellContent = cell.trim();
+                            const headerName = headerCells[index] ? headerCells[index].toLowerCase() : '';
+                            let cellClass = '';
+                            let cellHtml = cellContent;
+                            
+                            // First try to match by header name
+                            if (headerName.includes('period')) {
+                                cellClass = 'period-cell';
+                            } else if (headerName.includes('value')) {
+                                cellClass = 'value-cell';
+                            } else if (headerName.includes('currency')) {
+                                cellClass = 'currency-cell';
+                            } else if (headerName.includes('growth') || headerName.includes('yoy')) {
+                                // Growth percentage column
+                                const numValue = parseFloat(cellContent.replace('%', '').replace(',', '').replace(/[^\d.-]/g, ''));
+                                if (!isNaN(numValue)) {
+                                    if (numValue > 0) {
+                                        cellClass = 'growth-positive';
+                                    } else if (numValue < 0) {
+                                        cellClass = 'growth-negative';
+                                    } else {
+                                        cellClass = 'growth-zero';
+                                    }
+                                } else {
+                                    // If can't parse but header says growth, still apply style based on content
+                                    if (cellContent.includes('%')) {
+                                        cellClass = 'growth-zero';
+                                    }
+                                }
+                            } else {
+                                // Fallback: Style based on content pattern when header doesn't match
+                                if (cellContent.match(/^-?\d+\.?\d*%$/)) {
+                                    // Pure percentage
+                                    const numValue = parseFloat(cellContent.replace('%', ''));
+                                    if (numValue > 0) {
+                                        cellClass = 'growth-positive';
+                                    } else if (numValue < 0) {
+                                        cellClass = 'growth-negative';
+                                    } else {
+                                        cellClass = 'growth-zero';
+                                    }
+                                } else if (cellContent.match(/^-?\d[\d,]*\.?\d*%?$/)) {
+                                    // Numeric value (with or without %)
+                                    if (cellContent.includes('%')) {
+                                        const numValue = parseFloat(cellContent.replace('%', '').replace(',', ''));
+                                        if (numValue > 0) {
+                                            cellClass = 'growth-positive';
+                                        } else if (numValue < 0) {
+                                            cellClass = 'growth-negative';
+                                        } else {
+                                            cellClass = 'growth-zero';
+                                        }
+                                    } else {
+                                        // Regular numeric value
+                                        cellClass = 'value-cell';
+                                    }
+                                } else if (cellContent.match(/^\d+[QH]?FY-\d{4}$/i)) {
+                                    // Period format
+                                    cellClass = 'period-cell';
+                                } else if (cellContent.match(/^[A-Z]{2,4}$/)) {
+                                    // Currency code (2-4 letters like INR, USD, XXX)
+                                    cellClass = 'currency-cell';
+                                }
+                            }
+                            
+                            tableHtml += `<td class="${cellClass}">${cellHtml}</td>`;
+                        });
+                        tableHtml += '</tr>';
+                    }
+                    continue;
+                }
+                
+                // End of table
+                if (inTable && !line.includes('|')) {
+                    tableHtml += '</tbody></table>';
+                    formattedText += tableHtml + '\n';
+                    tableHtml = '';
+                    inTable = false;
+                    headerCells = [];
+                    columnCount = 0;
+                    
+                    // Add the current line if it's not empty
+                    if (line) {
+                        formattedText += line + '\n';
+                    }
+                    continue;
+                }
+                
+                // Regular text
+                if (!inTable) {
+                    formattedText += line + '\n';
+                }
+            }
+            
+            // Close any open table
+            if (inTable && tableHtml) {
+                tableHtml += '</tbody></table>';
+                formattedText += tableHtml;
+            }
+            
+            return formattedText || text;
         }
 
         // Allow Enter key to submit

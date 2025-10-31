@@ -9,12 +9,15 @@ from langchain_core.prompts import PromptTemplate
 from langchain_community.chains.graph_qa.cypher import GraphCypherQAChain
 from langchain_core.callbacks import BaseCallbackHandler
 from neo4j_env import graph
+from PEERS_RAG_tools import ToolRegistry
+from PEERS_RAG_react import ReActEngine, BaseReasoningEngine
 import textwrap
 import traceback
 import inspect
 import io
 import sys
 import re
+import json
 
 
 retrieval_qa_chat_prompt = """
@@ -101,11 +104,22 @@ class OutputCapture:
 class PEERSGraphRAG:
     """GraphRAG class for company knowledge graph"""
     
-    def __init__(self, log_manager=None):
+    def __init__(self, log_manager=None, use_tool_calling=False):
         self.log_manager = log_manager
         self.cypher_history = []  # Store generated Cypher queries
         self.schema_cache = None  # Cache for schema data
         self.cache_timestamp = None
+        
+        # Tool Calling support
+        self.use_tool_calling = use_tool_calling
+        self.tool_registry = None
+        self.llm_with_tools = None
+        
+        # ReAct support (future)
+        self.react_engine = None
+        
+        if self.use_tool_calling:
+            self._initialize_tool_calling()
         
         # Create a comprehensive prompt for Cypher generation
         cypher_prompt = PromptTemplate(
@@ -210,6 +224,70 @@ Cypher Query:"""
             cypher_prompt=cypher_prompt,
             allow_dangerous_requests=True,
         )
+    
+    def _initialize_tool_calling(self):
+        """Initialize tool calling infrastructure"""
+        try:
+            if self.log_manager:
+                self.log_manager.add_info_log('Initializing Tool Calling infrastructure...')
+            
+            # Create tool registry
+            self.tool_registry = ToolRegistry(log_manager=self.log_manager)
+            
+            # Get all tool definitions
+            tool_definitions = self.tool_registry.get_all_tool_definitions()
+            
+            # Create LLM and bind tools
+            # Use gpt-4o if available, otherwise fallback to gpt-4 or gpt-3.5-turbo
+            try:
+                llm = ChatOpenAI(model="gpt-4o", temperature=0)
+            except Exception:
+                try:
+                    llm = ChatOpenAI(model="gpt-4", temperature=0)
+                except Exception:
+                    llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+            
+            self.llm_with_tools = llm.bind_tools(tool_definitions)
+            
+            if self.log_manager:
+                self.log_manager.add_info_log(f'Tool Calling initialized with {len(tool_definitions)} tools')
+                
+        except Exception as e:
+            if self.log_manager:
+                self.log_manager.add_error_log(f'Failed to initialize Tool Calling: {str(e)}', e)
+            # Fallback to non-tool calling
+            self.use_tool_calling = False
+    
+    def _assess_complexity(self, question: str) -> str:
+        """
+        Assess query complexity to decide between Tool Calling and ReAct
+        
+        Returns:
+            "simple" - Use Tool Calling (fast, efficient)
+            "complex" - Use ReAct (future implementation)
+        """
+        question_lower = question.lower()
+        
+        # Complex query indicators (will use ReAct in future)
+        complex_indicators = [
+            "compare", "comparison", "vs", "versus", "trend",
+            "across", "multiple", "over", "calculate", "sum",
+            "aggregate", "average", "ratio", "difference",
+            "growth rate", "percentage change", "correlation"
+        ]
+        
+        # Count complexity indicators
+        complexity_score = sum(1 for indicator in complex_indicators if indicator in question_lower)
+        
+        # Multi-entity detection (multiple companies, multiple parameters)
+        company_count = len(re.findall(r'\b(company|companies|corporation|corp)\b', question_lower))
+        param_count = len(re.findall(r'\b(revenue|margin|profit|ebitda|sales|earnings)\b', question_lower))
+        
+        # Determine complexity
+        if complexity_score >= 2 or company_count > 1 or param_count > 2:
+            return "complex"
+        else:
+            return "simple"
     
     def get_dynamic_schema_context(self):
         """Get actual values from the database to enhance the prompt"""
@@ -334,7 +412,9 @@ Cypher Query:"""
         parameter_indicators = [
             'revenue', 'margin', 'profit', 'ebitda', 'ebit', 'net income', 
             'parameter', 'earnings', 'sales', 'cost', 'expense', 'ratio',
-            'growth', 'yoy', 'qoq', 'percentage', 'metric', 'financial'
+            'growth', 'yoy', 'qoq', 'percentage', 'metric', 'financial',
+            'production', 'volume', 'capacity', 'quantity', 'units', 'output',
+            'receivable', 'payable', 'accounts', 'asset', 'liability', 'equity'
         ]
         return any(indicator in question_lower for indicator in parameter_indicators)
     
@@ -410,10 +490,26 @@ Cypher Query:"""
             if abs(net_pos - profit_pos) < 10:  # Within 10 chars
                 decomposition['parameters'].append('Net profit')
         
+        # Production volume detection
+        if 'production volume' in question_lower or ('production' in question_lower and 'volume' in question_lower):
+            decomposition['parameters'].append('Production Units/Volume')
+        elif 'production' in question_lower:
+            # Check if they're close together
+            prod_pos = question_lower.find('production')
+            vol_pos = question_lower.find('volume')
+            if abs(prod_pos - vol_pos) < 15:  # Within 15 chars
+                decomposition['parameters'].append('Production Units/Volume')
+        
+        # Accounts receivable detection
+        if 'accounts receivable' in question_lower:
+            decomposition['parameters'].append('Accounts receivable')
+        elif 'receivable' in question_lower and 'accounts receivable' not in question_lower:
+            decomposition['parameters'].append('Receivables, Net')  # Fallback to common variant
+        
         # Total revenue detection
         if 'total revenue' in question_lower:
             decomposition['parameters'].append('Total revenue, Primary')
-        elif 'revenue' in question_lower and 'total revenue' not in question_lower:
+        elif 'revenue' in question_lower and 'total revenue' not in question_lower and 'production' not in question_lower:
             decomposition['parameters'].append('Revenue')
         
         decomposition['is_multi_parameter'] = len(decomposition['parameters']) > 1
@@ -476,6 +572,14 @@ Cypher Query:"""
                     param_conditions.append("p.parameter_name CONTAINS 'Net margin'")
                 elif param == 'Net profit':
                     param_conditions.append("p.parameter_name CONTAINS 'Net profit'")
+                elif param == 'Production Units/Volume':
+                    param_conditions.append("(p.parameter_name CONTAINS 'Production Units/Volume' OR (p.parameter_name CONTAINS 'Production' AND p.parameter_name CONTAINS 'Volume'))")
+                elif param == 'Accounts receivable':
+                    # Match all variations including "Accounts receivable, Average", etc.
+                    param_conditions.append("p.parameter_name CONTAINS 'Accounts receivable'")
+                elif param == 'Receivables, Net':
+                    # Match all receivable variations
+                    param_conditions.append("(p.parameter_name CONTAINS 'Receivables' OR p.parameter_name CONTAINS 'Receivable' OR (p.parameter_name CONTAINS 'Accounts' AND p.parameter_name CONTAINS 'receivable'))")
                 elif param == 'Total revenue, Primary':
                     param_conditions.append("p.parameter_name CONTAINS 'Total revenue'")
                 elif param == 'Revenue':
@@ -508,7 +612,7 @@ Cypher Query:"""
         
         query = f"MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)"
         query += f" WHERE {where_clause}"
-        query += f" RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth"
+        query += f" RETURN DISTINCT c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth"
         
         # Build final query with proper spacing - don't strip the leading space!
         if order_clause:
@@ -624,9 +728,24 @@ Cypher Query:"""
             
             # Build parameter conditions (order matters - more specific first)
             param_conditions = []
+            
+            # Production volume detection
+            if 'production volume' in question_lower or ('production' in question_lower and 'volume' in question_lower):
+                param_conditions.append("(p.parameter_name CONTAINS 'Production Units/Volume' OR (p.parameter_name CONTAINS 'Production' AND p.parameter_name CONTAINS 'Volume'))")
+            elif 'production' in question_lower:
+                param_conditions.append("p.parameter_name CONTAINS 'Production'")
+            
+            # Accounts receivable detection - match all variations (don't be too specific)
+            if 'accounts receivable' in question_lower:
+                # Match "Accounts receivable", "Accounts receivable, Average", etc.
+                param_conditions.append("p.parameter_name CONTAINS 'Accounts receivable'")
+            elif 'receivable' in question_lower and 'accounts receivable' not in question_lower:
+                # Match any receivable-related parameter
+                param_conditions.append("(p.parameter_name CONTAINS 'Receivables' OR p.parameter_name CONTAINS 'Receivable' OR (p.parameter_name CONTAINS 'Accounts' AND p.parameter_name CONTAINS 'receivable'))")
+            
             if 'total revenue' in question_lower:
                 param_conditions.append("p.parameter_name CONTAINS 'Total revenue'")
-            elif 'revenue' in question_lower:
+            elif 'revenue' in question_lower and 'production' not in question_lower and 'receivable' not in question_lower:
                 param_conditions.append("p.parameter_name CONTAINS 'Revenue'")
             
             if 'ebitda margin' in question_lower or ('ebitda' in question_lower and 'margin' in question_lower):
@@ -680,7 +799,7 @@ Cypher Query:"""
             query = f"MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)"
             if where_clause:
                 query += f" WHERE {where_clause}"
-            query += f" RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth"
+            query += f" RETURN DISTINCT c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth"
             
             # Add ORDER BY and LIMIT with proper spacing - don't strip leading space!
             if order_clause:
@@ -716,6 +835,210 @@ Cypher Query:"""
             if self.log_manager:
                 self.log_manager.add_info_log(f'Step 1: Generating Cypher query for: "{question}"')
             
+            # Route to appropriate generation method
+            if self.use_tool_calling:
+                complexity = self._assess_complexity(question)
+                
+                if complexity == "simple":
+                    # Use Tool Calling (current implementation)
+                    return self._generate_with_tools(question)
+                else:
+                    # Use ReAct for complex queries (future implementation)
+                    if self.log_manager:
+                        self.log_manager.add_info_log('Complex query detected - attempting ReAct (fallback to Tool Calling if not available)')
+                    
+                    # Initialize ReAct engine if not already done
+                    if self.react_engine is None and self.tool_registry:
+                        try:
+                            self.react_engine = ReActEngine(self.tool_registry, self.log_manager)
+                        except:
+                            pass
+                    
+                    # Use ReAct if available, otherwise fallback to Tool Calling
+                    if self.react_engine:
+                        try:
+                            return self.react_engine.generate_cypher(question)
+                        except NotImplementedError:
+                            if self.log_manager:
+                                self.log_manager.add_info_log('ReAct not yet implemented, using Tool Calling')
+                            return self._generate_with_tools(question)
+                    else:
+                        return self._generate_with_tools(question)
+            
+            # Fallback to existing monolithic prompt approach
+            return self._generate_with_monolithic_prompt(question)
+            
+        except Exception as e:
+            if self.log_manager:
+                self.log_manager.add_error_log(f'Cypher generation failed: {str(e)}', e)
+            raise
+    
+    def _generate_with_tools(self, question: str) -> str:
+        """
+        Generate Cypher query using Tool Calling approach
+        
+        Args:
+            question: Natural language question
+        
+        Returns:
+            Generated Cypher query string
+        """
+        try:
+            if not self.llm_with_tools:
+                if self.log_manager:
+                    self.log_manager.add_info_log('Tool calling not initialized, falling back to monolithic prompt')
+                return self._generate_with_monolithic_prompt(question)
+            
+            if self.log_manager:
+                self.log_manager.add_info_log('Using Tool Calling approach')
+            
+            # Initial message to LLM (LangChain format)
+            # Include instruction to generate Cypher query after using tools
+            from langchain_core.messages import HumanMessage
+            
+            system_message = """You are a Cypher query expert. Use the available tools to search for companies and parameters, then generate a valid Cypher query.
+
+Process:
+1. Use search_company to find the exact company name
+2. Use search_parameters to find exact parameter names
+3. Use generate_parameter_query or generate_company_details_query to generate the final Cypher query
+4. Your final response should contain ONLY a valid Cypher query, no explanations
+
+Generate Cypher queries that:
+- Match the exact company and parameter names from tool results
+- Include proper relationship patterns ([:HAS_PARAMETER], [:IN_COUNTRY], etc.)
+- Return relevant fields (company_name, parameter_name, period, value, currency, etc.)
+- Handle period filtering (latest, specific quarters, FY periods)
+
+Example final response format:
+MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
+WHERE c.company_name CONTAINS 'Exact Company Name' AND p.parameter_name CONTAINS 'Exact Parameter Name'
+RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency
+"""
+            
+            messages = [
+                HumanMessage(content=system_message),
+                HumanMessage(content=f"Question: {question}")
+            ]
+            
+            # Max iterations for tool calling
+            max_iterations = 5
+            iteration = 0
+            
+            while iteration < max_iterations:
+                # Call LLM with current messages
+                response = self.llm_with_tools.invoke(messages)
+                
+                # Check if LLM wants to use tools
+                # LangChain returns tool_calls in response.tool_calls
+                tool_calls = getattr(response, 'tool_calls', None) or []
+                if tool_calls:
+                    if self.log_manager:
+                        self.log_manager.add_info_log(f'LLM requested {len(tool_calls)} tool calls')
+                    
+                    # Add LLM response to conversation (response is already AIMessage with tool_calls)
+                    messages.append(response)
+                    
+                    # Execute all requested tools
+                    tool_messages = []
+                    for tool_call in tool_calls:
+                        # Extract tool name and arguments from LangChain tool_call object
+                        if hasattr(tool_call, 'name'):
+                            tool_name = tool_call.name
+                        else:
+                            tool_name = tool_call.get('name', '')
+                        
+                        # Extract arguments - LangChain tool_call has 'args' attribute
+                        if hasattr(tool_call, 'args'):
+                            tool_args = tool_call.args if tool_call.args else {}
+                        elif isinstance(tool_call, dict):
+                            tool_args = tool_call.get('args', tool_call.get('arguments', {}))
+                            # If arguments is a string, parse it
+                            if isinstance(tool_args, str):
+                                try:
+                                    tool_args = json.loads(tool_args)
+                                except:
+                                    tool_args = {}
+                        else:
+                            tool_args = {}
+                        
+                        # Get tool call ID for response
+                        tool_call_id = getattr(tool_call, 'id', None) or (tool_call.get('id', '') if isinstance(tool_call, dict) else '')
+                        
+                        try:
+                            if self.log_manager:
+                                self.log_manager.add_info_log(f'Executing tool: {tool_name} with args: {tool_args}')
+                            
+                            # Execute tool via registry
+                            tool_result = self.tool_registry.execute_tool(tool_name, **tool_args)
+                            
+                            # Format result for LLM (LangChain format)
+                            from langchain_core.messages import ToolMessage
+                            
+                            tool_message = ToolMessage(
+                                content=json.dumps(tool_result, indent=2),
+                                tool_call_id=tool_call_id
+                            )
+                            tool_messages.append(tool_message)
+                            
+                        except Exception as e:
+                            if self.log_manager:
+                                self.log_manager.add_error_log(f'Error executing tool {tool_name}: {str(e)}', e)
+                            
+                            from langchain_core.messages import ToolMessage
+                            tool_message = ToolMessage(
+                                content=json.dumps({"error": str(e)}),
+                                tool_call_id=tool_call_id
+                            )
+                            tool_messages.append(tool_message)
+                    
+                    # Add tool results to conversation
+                    messages.extend(tool_messages)
+                    iteration += 1
+                    continue
+                
+                # No more tool calls - extract final answer
+                final_content = response.content if hasattr(response, 'content') else str(response)
+                cypher_query = self._extract_cypher_query(final_content)
+                
+                if self._is_valid_cypher(cypher_query):
+                    if self.log_manager:
+                        self.log_manager.add_info_log(f'Tool Calling generated valid Cypher query')
+                        self.log_manager.add_info_log(f'Generated Cypher Query:\n{cypher_query}')
+                    return cypher_query
+                else:
+                    # If extraction failed, try to get it from messages
+                    if self.log_manager:
+                        self.log_manager.add_info_log(f'Extracted query invalid, trying alternative extraction')
+                    break
+            
+            # If we get here, tool calling didn't produce valid query
+            if self.log_manager:
+                self.log_manager.add_info_log(f'Tool calling did not produce valid query, falling back to monolithic prompt')
+            return self._generate_with_monolithic_prompt(question)
+            
+        except Exception as e:
+            if self.log_manager:
+                self.log_manager.add_error_log(f'Tool calling generation failed: {str(e)}', e)
+            # Fallback to monolithic prompt
+            return self._generate_with_monolithic_prompt(question)
+    
+    def _generate_with_monolithic_prompt(self, question: str) -> str:
+        """
+        Generate Cypher query using existing monolithic prompt approach
+        
+        This is the original implementation for backward compatibility
+        
+        Args:
+            question: Natural language question
+        
+        Returns:
+            Generated Cypher query string
+        """
+        try:
+            if self.log_manager:
+                self.log_manager.add_info_log('Using monolithic prompt approach (backward compatibility)')
+            
             # Analyze question for parameter queries
             question_lower = question.lower()
             
@@ -724,7 +1047,9 @@ Cypher Query:"""
             parameter_indicators = [
                 'revenue', 'margin', 'profit', 'ebitda', 'ebit', 'net income', 'expense', 
                 'cost', 'earnings', 'sales', 'gross', 'operating', 'parameter', 'metric',
-                'ratio', 'growth', 'yoy', 'qoq', 'percentage', 'percentage', 'ratio'
+                'ratio', 'growth', 'yoy', 'qoq', 'percentage', 'percentage', 'ratio',
+                'receivable', 'payable', 'accounts', 'production', 'volume', 'capacity',
+                'quantity', 'units', 'output', 'asset', 'liability', 'equity'
             ]
             
             is_parameter_query = any(indicator in question_lower for indicator in parameter_indicators)
@@ -835,6 +1160,9 @@ Cypher: MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]
 Question: EBITDA margin and Net profit for Kajaria in Q3FY-2024
 Cypher: MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE c.company_name CONTAINS 'Kajaria' AND pr.period CONTAINS '3QFY-2024' AND (p.parameter_name CONTAINS 'EBITDA margin' OR p.parameter_name CONTAINS 'Net profit' OR p.parameter_name CONTAINS 'Profit') RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth ORDER BY p.parameter_name
 
+Question: Accounts receivable of Kajaria in 2QFY-2025
+Cypher: MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE c.company_name CONTAINS 'Kajaria' AND p.parameter_name CONTAINS 'Accounts receivable' AND pr.period CONTAINS '2QFY-2025' RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth ORDER BY p.parameter_name
+
 Question: Show me Total revenue and EBITDA margin for Kajaria across all FY-2024 quarters
 Cypher: MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) WHERE c.company_name CONTAINS 'Kajaria' AND pr.period CONTAINS 'FY-2024' AND (p.parameter_name CONTAINS 'Total revenue' OR p.parameter_name CONTAINS 'EBITDA margin' OR p.parameter_name CONTAINS 'Revenue' OR p.parameter_name CONTAINS 'margin') RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth ORDER BY pr.period, p.parameter_name
 
@@ -939,12 +1267,39 @@ Cypher:""".format(schema=schema, available_values=available_values, question=que
             # Execute the query
             results = graph.query(cypher_query)
             
+            # Post-query validation: Check what was actually returned
+            params_in_results = set()
+            periods_in_results = set()
+            companies_in_results = set()
+            
+            if results:
+                # Extract unique parameters and periods from results
+                for result in results:
+                    if isinstance(result, dict):
+                        param = result.get('p.parameter_name', result.get('parameter_name'))
+                        period = result.get('pr.period', result.get('period'))
+                        company = result.get('c.company_name', result.get('company_name'))
+                        
+                        if param:
+                            params_in_results.add(str(param))
+                        if period:
+                            periods_in_results.add(str(period))
+                        if company:
+                            companies_in_results.add(str(company))
+            
             if self.log_manager:
                 self.log_manager.add_info_log(f'✅ Query executed successfully, returned {len(results)} results')
                 if results:
                     # Log sample of results structure
                     sample_keys = list(results[0].keys()) if results else []
                     self.log_manager.add_info_log(f'📊 Result columns: {", ".join(sample_keys)}')
+                    
+                    # Log what parameters and periods were found
+                    if params_in_results:
+                        self.log_manager.add_info_log(f'📈 Parameters found: {", ".join(list(params_in_results)[:5])}')
+                    if periods_in_results:
+                        self.log_manager.add_info_log(f'📅 Periods found: {", ".join(sorted(list(periods_in_results))[:5])}')
+                    
                     # Log a sample result for debugging
                     if len(results) > 0:
                         sample_result = {k: str(v)[:50] if len(str(v)) > 50 else v for k, v in results[0].items()}
@@ -1034,41 +1389,158 @@ Cypher:""".format(schema=schema, available_values=available_values, question=que
             if self.log_manager:
                 self.log_manager.add_info_log(f'Step 4: Synthesizing final answer with LLM')
             
-            # Format structured results
-            # Show all results for industry queries, limit others to 20
+            # Format structured results in a clear, readable format
             structured_data = ""
-            for i, result in enumerate(structured_results):
-                if isinstance(result, dict):
-                    structured_data += f"Result {i+1}: {result}\n"
+            if structured_results:
+                # Group results by parameter and deduplicate by period-value-currency combination
+                params_found = {}
+                periods_found = set()
+                seen_combinations = {}  # Track seen period+value+currency combinations to deduplicate
+                
+                for result in structured_results:
+                    if isinstance(result, dict):
+                        param_name = result.get('p.parameter_name', result.get('parameter_name', 'Unknown'))
+                        period = result.get('pr.period', result.get('period', 'Unknown'))
+                        value = result.get('pr.value', result.get('value', 'N/A'))
+                        currency = result.get('pr.currency', result.get('currency', 'N/A'))
+                        yoy_growth = result.get('pr.yoy_growth', result.get('yoy_growth', 'N/A'))
+                        
+                        # Create unique key that includes parameter name to keep similar parameters separate
+                        # Use exact value (not rounded) to preserve distinct values even if close
+                        # This ensures "Accounts receivable" and "Accounts receivable, Average" are shown separately
+                        if isinstance(value, (int, float)):
+                            value_key = str(value)  # Keep exact value for uniqueness
+                        else:
+                            value_key = str(value)
+                        
+                        # Include parameter name in unique key so similar parameters are kept distinct
+                        unique_key = f"{param_name}|{period}|{value_key}|{currency}"
+                        
+                        # Only add if we haven't seen this exact combination before
+                        # Different parameter names with same period+value will be shown separately
+                        if unique_key not in seen_combinations:
+                            seen_combinations[unique_key] = True
+                            periods_found.add(period)
+                            
+                            if param_name not in params_found:
+                                params_found[param_name] = []
+                            
+                            params_found[param_name].append({
+                                'period': period,
+                                'value': value,
+                                'currency': currency,
+                                'yoy_growth': yoy_growth
+                            })
+                
+                # Calculate total deduplicated records
+                total_deduped_records = sum(len(records) for records in params_found.values())
+                
+                # Format as readable data
+                structured_data = f"Found {total_deduped_records} unique data records (after deduplication):\n\n"
+                company_name = structured_results[0].get('c.company_name', structured_results[0].get('company_name', 'Unknown'))
+                structured_data += f"Company: {company_name}\n"
+                structured_data += f"Periods in data: {', '.join(sorted(periods_found))}\n\n"
+                
+                # Check if we have multiple similar parameter names (e.g., "Accounts receivable" and "Accounts receivable, Average")
+                has_similar_params = len(params_found) > 1
+                similar_param_base = None
+                if has_similar_params:
+                    # Check if parameters share a common base name
+                    param_names = list(params_found.keys())
+                    first_base = param_names[0].split(',')[0].strip()
+                    if all(p.split(',')[0].strip() == first_base for p in param_names):
+                        similar_param_base = first_base
+                        has_similar_params = True
+                
+                # Group records by parameter for better table structure
+                for param_name, records in params_found.items():
+                    structured_data += f"\nParameter: {param_name} ({len(records)} unique records)\n"
+                    # Sort records by period for chronological order
+                    sorted_records = sorted(records[:20], key=lambda x: x['period'])  # Limit to 20 per parameter, sorted
+                    for record in sorted_records:
+                        # Format value with proper decimal places
+                        value = record['value']
+                        if isinstance(value, (int, float)):
+                            if abs(value) >= 1000000:
+                                formatted_value = f"{value:,.2f}"
+                            else:
+                                formatted_value = f"{value:.2f}"
+                        else:
+                            formatted_value = str(value)
+                        
+                        structured_data += f"  - Period: {record['period']}, Value: {formatted_value}, Currency: {record['currency']}"
+                        if record['yoy_growth'] != 'N/A' and record['yoy_growth'] is not None:
+                            growth_value = record['yoy_growth']
+                            if isinstance(growth_value, (int, float)):
+                                structured_data += f", YoY Growth: {growth_value:.2f}%"
+                            else:
+                                structured_data += f", YoY Growth: {growth_value}%"
+                        structured_data += "\n"
+                
+                structured_data += f"\nTotal: {len(structured_results)} records found across {len(params_found)} parameters.\n"
+            else:
+                structured_data = "No structured data records found."
             
             # Create synthesis prompt
             # Check if we actually have results
             has_results = len(structured_results) > 0 and structured_data.strip() != ""
             
+            # Enhanced prompt based on whether we have results
+            if len(structured_results) > 0:
+                results_indicator = f"⚠️ CRITICAL: {len(structured_results)} DATA RECORDS FOUND - YOU MUST PRESENT THIS DATA"
+            else:
+                results_indicator = "No data records found in database."
+            
             synthesis_prompt = f"""
-Based ONLY on the structured data and text chunks provided below, answer the user's question. Do NOT provide external information or suggestions.
+Based ONLY on the structured data provided below, answer the user's question.
 
 Question: {question}
 
-Structured Data ({len(structured_results)} records found):
+{results_indicator}
+
+Structured Data:
 {structured_data if structured_data.strip() else "No structured data records found."}
 
-Relevant Text Chunks:
-{chunks_text if chunks_text.strip() else "No text chunks available."}
+CRITICAL RULES - FOLLOW EXACTLY:
+1. If you see "{len(structured_results)} records found" or "Found X data records" above, DATA EXISTS - present it immediately
+2. NEVER say "No data found", "no information", "no specific data", "Unfortunately there is no data" if structured data shows records
+3. Format the answer as a structured table using markdown format with pipe delimiters
+4. If multiple records exist, group by parameter and show each period's data in a row
+5. Round currency values to 2 decimal places for readability
+6. Use this EXACT format for parameter queries:
 
-CRITICAL INSTRUCTIONS:
-1. Answer ONLY based on the data provided above
-2. IMPORTANT: If structured data shows {len(structured_results)} records above, there IS data available - you MUST present it
-3. If structured data is available, provide the specific values, numbers, and details from the structured data
-4. Do NOT say "No data found" if the structured data section shows records
-5. For parameter queries, present the data in a clear table or list format showing: parameter name, period, value, currency, growth
-6. If the question asks for multiple parameters, show data for ALL parameters found
-7. If the question asks for a specific period (like 4QFY-2025), mention if the data shows a different period (like 4QFY-2024) and explain
-8. Do NOT suggest external sources, websites, or general knowledge
-9. Be factual and present the actual numbers and values from the data
-10. If you see {len(structured_results)} records in structured data above, you MUST present them, not say "no data found"
+## [Parameter Name] for [Company Name] in [Period/Range]
 
-Answer:"""
+| Period | Value | Currency | YoY Growth |
+|--------|-------|----------|------------|
+| [period1] | [value1] | [currency1] | [growth1]% |
+| [period2] | [value2] | [currency2] | [growth2]% |
+
+If multiple similar parameter names exist (e.g., "Accounts receivable" and "Accounts receivable, Average"), use this format instead:
+
+| Parameter Name | Period | Value | Currency | YoY Growth |
+|---------------|--------|-------|----------|------------|
+| Accounts receivable | [period1] | [value1] | [currency1] | [growth1]% |
+| Accounts receivable, Average | [period1] | [value2] | [currency2] | [growth2]% |
+
+IMPORTANT: Always include "Period" as a column. If multiple similar parameter names exist, include "Parameter Name" as the FIRST column. Each row must have data in ALL columns matching the header structure. Ensure data alignment: Period column should ONLY contain periods (like "2QFY-2025"), Value column should ONLY contain numeric values, Currency column should ONLY contain currency codes (like "INR"), and YoY Growth should ONLY contain percentages.
+
+7. If multiple parameters are requested or similar parameter names exist (e.g., "Accounts receivable" and "Accounts receivable, Average"), create separate rows or separate tables showing BOTH parameter names and their distinct values
+8. Sort periods chronologically when possible
+9. Use actual numbers from the structured data - do not generalize
+10. If {len(structured_results)} records are shown above, create tables with ALL that data
+11. IMPORTANT: Do NOT combine or deduplicate similar parameter names - if "Accounts receivable" and "Accounts receivable, Average" both exist, show them as separate rows with their respective values
+
+Example format:
+## Accounts receivable for Kajaria Ceramics for FY-2025
+
+| Period | Value | Currency | YoY Growth |
+|--------|-------|----------|------------|
+| 1HFY-2025 | 6,461,000,000.00 | INR | 16.12% |
+| 2QFY-2025 | 6,461,000,000.00 | INR | 0.00% |
+| FY-2025 | 5,701,800,000.00 | INR | -7.95% |
+
+Answer (create markdown table format if data exists, otherwise say data not found):"""
             
             llm = ChatOpenAI(temperature=0)
             response = llm.invoke(synthesis_prompt)
@@ -1159,6 +1631,20 @@ Answer:"""
     def clear_cypher_history(self):
         """Clear the Cypher query history"""
         self.cypher_history = []
+    
+    def enable_tool_calling(self):
+        """Enable tool calling (can be called at runtime)"""
+        if not self.use_tool_calling:
+            self.use_tool_calling = True
+            self._initialize_tool_calling()
+            if self.log_manager:
+                self.log_manager.add_info_log('Tool calling enabled')
+    
+    def disable_tool_calling(self):
+        """Disable tool calling (fallback to monolithic prompt)"""
+        self.use_tool_calling = False
+        if self.log_manager:
+            self.log_manager.add_info_log('Tool calling disabled - using monolithic prompt')
 
 
 # Update the original GraphRAG import to use PEERS version

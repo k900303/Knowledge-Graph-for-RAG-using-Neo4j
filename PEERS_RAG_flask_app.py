@@ -113,12 +113,16 @@ class LogManager:
 log_manager = LogManager()
 
 
-def init_rag():
+def init_rag(use_tool_calling=False):
     """Initialize RAG systems"""
     global graph_rag, vector_rag
     if graph_rag is None:
-        log_manager.add_info_log('Creating GraphRAG instance...')
-        graph_rag = PEERSGraphRAG(log_manager)
+        log_manager.add_info_log(f'Creating GraphRAG instance (tool_calling={use_tool_calling})...')
+        graph_rag = PEERSGraphRAG(log_manager, use_tool_calling=use_tool_calling)
+    elif graph_rag.use_tool_calling != use_tool_calling:
+        # Reinitialize if tool calling preference changed
+        log_manager.add_info_log(f'Reinitializing GraphRAG with tool_calling={use_tool_calling}...')
+        graph_rag = PEERSGraphRAG(log_manager, use_tool_calling=use_tool_calling)
     if vector_rag is None:
         log_manager.add_info_log('Creating VectorRAG instance...')
         vector_rag = PEERSVectorRAG(log_manager)
@@ -165,10 +169,19 @@ def stream_logs():
 def api_init():
     """Initialize RAG systems"""
     try:
-        log_manager.add_info_log('Starting RAG systems initialization...')
-        init_rag()
-        log_manager.add_log('success', 'RAG systems initialized successfully')
-        return jsonify({'status': 'success', 'message': 'RAG systems initialized'})
+        data = request.json or {}
+        use_tool_calling = data.get('use_tool_calling', False)
+        
+        log_manager.add_info_log(f'Starting RAG systems initialization (tool_calling={use_tool_calling})...')
+        init_rag(use_tool_calling=use_tool_calling)
+        
+        tool_status = "enabled" if use_tool_calling else "disabled"
+        log_manager.add_log('success', f'RAG systems initialized successfully (Tool Calling: {tool_status})')
+        return jsonify({
+            'status': 'success', 
+            'message': f'RAG systems initialized (Tool Calling: {tool_status})',
+            'tool_calling_enabled': use_tool_calling
+        })
     except Exception as e:
         log_manager.add_error_log(f'RAG initialization failed: {str(e)}', e)
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -181,16 +194,25 @@ def api_query():
         data = request.json
         query = data.get('query', '')
         mode = data.get('mode', 'GraphRAG')
+        use_tool_calling = data.get('use_tool_calling', False)
         
-        log_manager.add_info_log(f'Received query: "{query}" in {mode} mode')
+        log_manager.add_info_log(f'Received query: "{query}" in {mode} mode (tool_calling={use_tool_calling})')
         
         if not query:
             log_manager.add_error_log('Query is empty')
             return jsonify({'status': 'error', 'message': 'Query is required'}), 400
         
         # Ensure RAG systems are initialized
-        log_manager.add_info_log('Initializing RAG systems...')
-        init_rag()
+        log_manager.add_info_log(f'Initializing RAG systems (tool_calling={use_tool_calling})...')
+        init_rag(use_tool_calling=use_tool_calling)
+        
+        # If GraphRAG is initialized and tool calling preference changed, update it
+        if graph_rag and graph_rag.use_tool_calling != use_tool_calling:
+            if use_tool_calling:
+                graph_rag.enable_tool_calling()
+            else:
+                graph_rag.disable_tool_calling()
+        
         log_manager.add_log('success', 'RAG systems ready')
         
         # Execute query
@@ -278,11 +300,15 @@ def test_connections():
             log_manager.add_error_log(f'OpenAI connection failed: {str(e)}', e)
             return jsonify({'status': 'error', 'message': f'OpenAI connection failed: {str(e)}'}), 500
         
-        # Test GraphRAG initialization
+        # Test GraphRAG initialization (both modes)
         try:
-            log_manager.add_info_log('Testing GraphRAG initialization...')
-            graph_rag_test = PEERSGraphRAG(log_manager)
-            log_manager.add_info_log('GraphRAG initialization successful')
+            log_manager.add_info_log('Testing GraphRAG initialization (classic mode)...')
+            graph_rag_test = PEERSGraphRAG(log_manager, use_tool_calling=False)
+            log_manager.add_info_log('GraphRAG classic mode initialization successful')
+            
+            log_manager.add_info_log('Testing GraphRAG initialization (tool calling mode)...')
+            graph_rag_test_tools = PEERSGraphRAG(log_manager, use_tool_calling=True)
+            log_manager.add_info_log('GraphRAG tool calling mode initialization successful')
         except Exception as e:
             log_manager.add_error_log(f'GraphRAG initialization failed: {str(e)}', e)
             return jsonify({'status': 'error', 'message': f'GraphRAG initialization failed: {str(e)}'}), 500
