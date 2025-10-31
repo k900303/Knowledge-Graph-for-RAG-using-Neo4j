@@ -9,6 +9,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from neo4j_env import graph, get_graph
 from PEERS_RAG_tools import ToolRegistry
 from PEERS_RAG_react import ReActEngine, BaseReasoningEngine
+from PEERS_RAG_company_verification import CompanyVerificationTool, CompanyNameExtractor, CompanyQueryBuilder
 import textwrap
 import traceback
 import inspect
@@ -531,7 +532,7 @@ class PEERSGraphRAG:
     def _search_exact_company_name(self, search_term: str, limit: int = 5) -> str:
         """
         Search Neo4j for exact company name matching the search term
-        Returns the first matching company name or None
+        Uses CompanyVerificationTool for better separation of concerns
         
         Args:
             search_term: Partial company name from user query (e.g., "kajaria")
@@ -541,37 +542,13 @@ class PEERSGraphRAG:
             Exact company name from database (e.g., "Kajaria Ceramics") or None
         """
         try:
-            # Ensure graph connection is available
-            global graph
-            if graph is None:
-                graph = get_graph()
-                if graph is None:
-                    if self.log_manager:
-                        self.log_manager.add_info_log('Neo4j not connected, cannot search for exact company name')
-                    return None
+            # Use the dedicated verification tool
+            verification_tool = CompanyVerificationTool(log_manager=self.log_manager)
+            verification_result = verification_tool.verify_company_name(search_term, limit=limit)
             
-            # Use fuzzy matching with CONTAINS, STARTS WITH, ENDS WITH
-            query = f"""
-            MATCH (c:Company)
-            WHERE c.company_name CONTAINS '{search_term}' 
-               OR c.company_name STARTS WITH '{search_term}'
-               OR toLower(c.company_name) CONTAINS toLower('{search_term}')
-            RETURN c.company_name
-            LIMIT {limit}
-            """
+            if verification_result.get("exact_name"):
+                return verification_result["exact_name"]
             
-            results = graph.query(query)
-            
-            if results and len(results) > 0:
-                # Return the first match (most relevant)
-                exact_company_name = results[0].get('c.company_name', None)
-                if exact_company_name:
-                    if self.log_manager:
-                        self.log_manager.add_info_log(f'Found exact company name: "{exact_company_name}" for search term "{search_term}"')
-                    return exact_company_name
-            
-            if self.log_manager:
-                self.log_manager.add_info_log(f'No company found matching "{search_term}"')
             return None
             
         except Exception as e:
@@ -582,7 +559,7 @@ class PEERSGraphRAG:
     def _generate_smart_fallback_query(self, question: str) -> str:
         """
         Generate a smart fallback Cypher query by extracting company name from question
-        First searches Neo4j for the exact company name, then uses it in the query
+        Uses dedicated tools for better separation: CompanyNameExtractor, CompanyVerificationTool, CompanyQueryBuilder
         This is used when tool calling fails to produce a valid query
         """
         try:
@@ -592,46 +569,10 @@ class PEERSGraphRAG:
             is_details_query = any(word in question_lower for word in ['details', 'detail', 'information', 'info', 'about'])
             is_parameter_query = self._is_parameter_question(question)
             
-            # Try to extract company search term from question
-            company_search_term = None
+            # Extract company search term from question using dedicated extractor
+            company_search_term = CompanyNameExtractor.extract_from_query(question)
             
-            # Check for common patterns
-            import re
-            
-            # Pattern: "details of [company]", "company details of [company]", etc.
-            patterns = [
-                r'(?:details?|information|info|about)\s+(?:of|for|about)\s+([a-zA-Z][\w\s]+?)(?:\s+company|\s+details|\s+information|$)',
-                r'company\s+details?\s+(?:of|for|about)\s+([a-zA-Z][\w\s]+?)(?:\s+company|$)',
-                r'([a-zA-Z][\w\s]+?)\s+company\s+details?',
-                r'([a-zA-Z][\w\s]+?)(?:\s+details|\s+information|\s+info)',
-            ]
-            
-            for pattern in patterns:
-                match = re.search(pattern, question_lower, re.IGNORECASE)
-                if match:
-                    company_search_term = match.group(1).strip()
-                    # Remove common stop words
-                    company_search_term = re.sub(r'\s+(company|details|information|info|the|of|for|about)$', '', company_search_term, flags=re.IGNORECASE)
-                    if len(company_search_term) > 2:
-                        break
-            
-            # If not found, try simple word extraction (look for capitalized words)
-            if not company_search_term:
-                words = question.split()
-                for i, word in enumerate(words):
-                    if word.isalpha() and len(word) > 3 and word[0].isupper():
-                        # Check if this looks like a company name
-                        if i < len(words) - 1:
-                            next_word = words[i + 1]
-                            if next_word.lower() in ['company', 'details', 'information', 'info', 'of', 'for']:
-                                company_search_term = word
-                                break
-                        # Or if it's at the end and the question contains details/info
-                        elif is_details_query:
-                            company_search_term = word
-                            break
-            
-            # Try getting company from schema context as last resort
+            # Try getting company from schema context as last resort if extractor didn't find anything
             if not company_search_term:
                 try:
                     if schema_context := self.get_dynamic_schema_context():
@@ -647,49 +588,58 @@ class PEERSGraphRAG:
                 except:
                     pass
             
-            # If we found a search term, first search Neo4j for exact company name
+            # If we found a search term, verify it and build query
             if company_search_term:
                 if self.log_manager:
-                    self.log_manager.add_info_log(f'Searching Neo4j for exact company name matching "{company_search_term}"')
+                    self.log_manager.add_info_log(f'Extracted company search term: "{company_search_term}"')
+                
+                # Use verification tool to get exact company name
+                verification_tool = CompanyVerificationTool(log_manager=self.log_manager)
                 
                 # Get the first word for initial search (e.g., "kajaria" from "kajaria company")
                 search_word = company_search_term.split()[0].lower()
                 
-                # Search for exact company name in database
-                exact_company_name = self._search_exact_company_name(search_word, limit=5)
+                # Verify and get exact company name
+                verification_result = verification_tool.verify_company_name(search_word, limit=5)
+                exact_company_name = verification_result.get("exact_name")
                 
                 # Use exact name if found, otherwise use search term
                 if exact_company_name:
                     company_name_to_use = exact_company_name
+                    use_exact_match = True  # Use exact match when we have verified name
                     if self.log_manager:
-                        self.log_manager.add_info_log(f'Using exact company name: "{company_name_to_use}"')
+                        self.log_manager.add_info_log(f'Using verified exact company name: "{company_name_to_use}"')
                 else:
                     # Fallback to using the search term directly (with fuzzy matching)
                     company_name_to_use = company_search_term
+                    use_exact_match = False  # Use contains matching as fallback
                     if self.log_manager:
-                        self.log_manager.add_info_log(f'Exact name not found, using search term: "{company_name_to_use}"')
+                        self.log_manager.add_info_log(f'Exact name not found, using search term with fuzzy matching: "{company_name_to_use}"')
                 
-                # Generate appropriate query based on type
+                # Generate appropriate query using query builder
                 if is_details_query and not is_parameter_query:
-                    # Company details query - use exact company name for better matching
-                    return f"""MATCH (c:Company)-[:IN_COUNTRY]->(country:Country),
-                      (c)-[:IN_SECTOR]->(s:Sector),
-                      (c)-[:IN_INDUSTRY]->(i:Industry)
-                    WHERE c.company_name = '{company_name_to_use}' OR c.company_name CONTAINS '{company_name_to_use}'
-                    RETURN c.company_name, c.cid, country.name as country, country.code as country_code,
-                           s.name as sector, i.name as industry, c.market_cap, c.description
-                    LIMIT 10"""
+                    # Company details query
+                    return CompanyQueryBuilder.build_company_details_query(
+                        company_name_to_use, 
+                        use_exact_match=use_exact_match
+                    )
                 elif is_parameter_query:
-                    # Parameter query with company filter - use exact name
-                    return f"""MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
-                    WHERE c.company_name = '{company_name_to_use}' OR c.company_name CONTAINS '{company_name_to_use}'
-                    RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth
-                    ORDER BY pr.period DESC
-                    LIMIT 20"""
+                    # Parameter query with company filter
+                    return CompanyQueryBuilder.build_parameter_query(
+                        company_name_to_use,
+                        parameter_names=None,
+                        period='latest',
+                        use_exact_match=use_exact_match
+                    )
                 else:
-                    # Generic company query - use exact name
+                    # Generic company query
+                    if use_exact_match:
+                        where_clause = f"c.company_name = '{company_name_to_use}'"
+                    else:
+                        where_clause = f"c.company_name CONTAINS '{company_name_to_use}'"
+                    
                     return f"""MATCH (c:Company)
-                    WHERE c.company_name = '{company_name_to_use}' OR c.company_name CONTAINS '{company_name_to_use}'
+                    WHERE {where_clause}
                     RETURN c.company_name, c.cid
                     LIMIT 20"""
             
