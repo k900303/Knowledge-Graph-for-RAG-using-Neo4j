@@ -227,13 +227,24 @@ class CompanySearchTool(BaseToolHandler):
             if self.log_manager:
                 self.log_manager.add_info_log(f'Tool: search_company called with name="{company_name}", limit={limit}')
             
-            # Use fuzzy matching with CONTAINS, STARTS WITH, ENDS WITH
+            # Escape single quotes to prevent Cypher injection
+            escaped_name = company_name.replace("'", "\\'")
+            
+            # Use case-insensitive matching - CONTAINS is case-sensitive, so use toLower()
             query = f"""
             MATCH (c:Company)
-            WHERE c.company_name CONTAINS '{company_name}' 
-               OR c.company_name STARTS WITH '{company_name}'
-               OR c.company_name ENDS WITH '{company_name}'
+            WHERE toLower(c.company_name) CONTAINS toLower('{escaped_name}')
+               OR toLower(c.company_name) STARTS WITH toLower('{escaped_name}')
+               OR toLower(c.company_name) ENDS WITH toLower('{escaped_name}')
             RETURN c.company_name, c.cid
+            ORDER BY 
+                CASE 
+                    WHEN toLower(c.company_name) = toLower('{escaped_name}') THEN 0
+                    WHEN toLower(c.company_name) STARTS WITH toLower('{escaped_name}') THEN 1
+                    WHEN toLower(c.company_name) CONTAINS toLower('{escaped_name}') THEN 2
+                    ELSE 3 
+                END,
+                c.company_name
             LIMIT {limit}
             """
             
@@ -461,21 +472,43 @@ class CypherGeneratorTool(BaseToolHandler):
             if self.log_manager:
                 self.log_manager.add_info_log(f'Tool: generate_company_details_query called - company="{company_name}"')
             
+            # Escape single quotes to prevent Cypher injection
+            escaped_name = company_name.replace("'", "\\'")
+            
+            # Use both exact match and case-insensitive contains for better matching
+            # If company_name looks like an exact name (from search_company), try exact match first
+            # Otherwise, use case-insensitive contains
             if include_relationships:
                 cypher = f"""
                 MATCH (c:Company)-[:IN_COUNTRY]->(country:Country),
                       (c)-[:IN_SECTOR]->(s:Sector),
                       (c)-[:IN_INDUSTRY]->(i:Industry)
-                WHERE c.company_name CONTAINS '{company_name}'
+                WHERE c.company_name = '{escaped_name}' 
+                   OR toLower(c.company_name) = toLower('{escaped_name}')
+                   OR toLower(c.company_name) CONTAINS toLower('{escaped_name}')
                 RETURN c.company_name, c.cid, country.name as country, country.code as country_code,
                        s.name as sector, i.name as industry, c.market_cap, c.description
+                ORDER BY 
+                    CASE 
+                        WHEN c.company_name = '{escaped_name}' THEN 0
+                        WHEN toLower(c.company_name) = toLower('{escaped_name}') THEN 1
+                        ELSE 2 
+                    END
                 LIMIT 10
                 """.strip()
             else:
                 cypher = f"""
                 MATCH (c:Company)
-                WHERE c.company_name CONTAINS '{company_name}'
+                WHERE c.company_name = '{escaped_name}' 
+                   OR toLower(c.company_name) = toLower('{escaped_name}')
+                   OR toLower(c.company_name) CONTAINS toLower('{escaped_name}')
                 RETURN c.company_name, c.cid, c.market_cap, c.description
+                ORDER BY 
+                    CASE 
+                        WHEN c.company_name = '{escaped_name}' THEN 0
+                        WHEN toLower(c.company_name) = toLower('{escaped_name}') THEN 1
+                        ELSE 2 
+                    END
                 LIMIT 10
                 """.strip()
             

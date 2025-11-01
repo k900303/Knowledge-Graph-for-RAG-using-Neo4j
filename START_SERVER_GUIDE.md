@@ -296,3 +296,4 @@ Press `CTRL+C` in the terminal where the server is running.
 
 **Happy Querying! 🚀**
 
+

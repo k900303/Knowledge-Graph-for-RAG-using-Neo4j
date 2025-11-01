@@ -102,3 +102,4 @@ python run_web_app.py
 - ⚠️ **Neo4j must be running** to use the application
 - 💡 **Best practice**: Always start Neo4j before the Flask app
 
+
