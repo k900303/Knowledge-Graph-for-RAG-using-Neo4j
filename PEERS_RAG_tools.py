@@ -749,24 +749,43 @@ class CypherGeneratorTool(BaseToolHandler):
             
             # Build period filter and ordering
             if period == "latest":
-                period_filter = ""
-                order_clause = "ORDER BY pr.period DESC LIMIT 1"
+                # ✅ FIXED: Get latest period for EACH parameter (not just one record total)
+                # First, find the latest period overall, then filter by that period
+                cypher = f"""
+                MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
+                WHERE c.company_name CONTAINS '{company_name}'
+                  AND {param_filter}
+                WITH max(pr.period) as latest_period
+                MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
+                WHERE c.company_name CONTAINS '{company_name}'
+                  AND {param_filter}
+                  AND pr.period = latest_period
+                RETURN DISTINCT c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth
+                ORDER BY p.parameter_name, pr.period DESC
+                """.strip()
             elif periods:
                 period_list = "', '".join(periods)
                 period_filter = f"AND pr.period IN ['{period_list}']"
                 order_clause = "ORDER BY pr.period, p.parameter_name"
+                cypher = f"""
+                MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
+                WHERE c.company_name CONTAINS '{company_name}'
+                  AND {param_filter}
+                  {period_filter}
+                RETURN DISTINCT c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth
+                {order_clause}
+                """.strip()
             else:
                 period_filter = f"AND pr.period CONTAINS '{period}'"
                 order_clause = "ORDER BY pr.period, p.parameter_name"
-            
-            cypher = f"""
-            MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
-            WHERE c.company_name CONTAINS '{company_name}'
-              AND {param_filter}
-              {period_filter}
-            RETURN DISTINCT c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth
-            {order_clause}
-            """.strip()
+                cypher = f"""
+                MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
+                WHERE c.company_name CONTAINS '{company_name}'
+                  AND {param_filter}
+                  {period_filter}
+                RETURN DISTINCT c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth
+                {order_clause}
+                """.strip()
             
             result = {
                 "cypher_query": cypher,
@@ -982,6 +1001,18 @@ class ToolRegistry:
         self.geography_search_tool = GeographySearchTool(log_manager)
         self.cypher_generator_tool = CypherGeneratorTool(log_manager)
         
+        # Initialize period tools (new)
+        try:
+            from PEERS_RAG_tools_period import PeriodNormalizationTool, PeriodSearchTool
+            self.period_normalization_tool = PeriodNormalizationTool(log_manager)
+            self.period_search_tool = PeriodSearchTool(log_manager)
+        except ImportError:
+            # If period tools file doesn't exist, create simple inline versions
+            self.period_normalization_tool = None
+            self.period_search_tool = None
+            if log_manager:
+                log_manager.add_info_log('Period tools not available - period search/normalization disabled')
+        
         # Register all tools
         self.tools = {
             "search_parameters": self.parameter_search_tool,
@@ -993,6 +1024,12 @@ class ToolRegistry:
             "generate_company_details_query": self.cypher_generator_tool,
             "generate_filter_query": self.cypher_generator_tool
         }
+        
+        # Register period tools if available
+        if self.period_normalization_tool:
+            self.tools["normalize_period"] = self.period_normalization_tool
+        if self.period_search_tool:
+            self.tools["search_periods"] = self.period_search_tool
     
     def get_all_tool_definitions(self) -> List[Dict]:
         """Get all tool definitions in OpenAI format"""
@@ -1004,6 +1041,12 @@ class ToolRegistry:
         tools.append(self.sector_search_tool.get_tool_definition())
         tools.append(self.industry_search_tool.get_tool_definition())
         tools.append(self.geography_search_tool.get_tool_definition())
+        
+        # Add period tools if available
+        if self.period_normalization_tool:
+            tools.append(self.period_normalization_tool.get_tool_definition())
+        if self.period_search_tool:
+            tools.append(self.period_search_tool.get_tool_definition())
         
         # Add generator tools (they return dict of multiple tools)
         generator_defs = self.cypher_generator_tool.get_tool_definition()
@@ -1027,6 +1070,9 @@ class ToolRegistry:
             return tool.execute_company_details_query(**kwargs)
         elif tool_name == "generate_filter_query":
             return tool.execute_filter_query(**kwargs)
+        elif tool_name in ["normalize_period", "search_periods", "search_parameters", "search_company", 
+                           "search_sectors", "search_industries", "search_geography"]:
+            return tool.execute(**kwargs)
         else:
             return tool.execute(**kwargs)
     
