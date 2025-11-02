@@ -10,6 +10,7 @@ from neo4j_env import graph, get_graph
 from PEERS_RAG_tools import ToolRegistry
 from PEERS_RAG_react import ReActEngine, BaseReasoningEngine
 from PEERS_RAG_company_verification import CompanyVerificationTool, CompanyNameExtractor, CompanyQueryBuilder
+from PEERS_RAG_prompts import ModularPromptBuilder, QueryAnalyzer
 import textwrap
 import traceback
 import inspect
@@ -867,46 +868,29 @@ class PEERSGraphRAG:
                 return "MATCH (c:Company) RETURN c.company_name, c.cid LIMIT 10"
             
             if self.log_manager:
-                self.log_manager.add_info_log('Using Tool Calling approach')
+                self.log_manager.add_info_log('Using Tool Calling approach with Modular Prompt System')
+            
+            # MODULAR PROMPT SYSTEM: Analyze query and build focused prompt
+            # This ensures we only load relevant instructions, keeping prompts small and efficient
+            query_analyzer = QueryAnalyzer(log_manager=self.log_manager)
+            query_analysis = query_analyzer.analyze(question)
+            
+            # Build prompt dynamically based on query needs
+            prompt_builder = ModularPromptBuilder(log_manager=self.log_manager)
+            system_message = prompt_builder.build_for_query_type(query_analysis)
+            
+            # Log prompt size for monitoring
+            if self.log_manager:
+                estimated_tokens = prompt_builder.estimate_token_count(system_message)
+                self.log_manager.add_info_log(f'Modular Prompt: ~{estimated_tokens} tokens (composed dynamically)')
             
             # Initial message to LLM (LangChain format)
-            # Include instruction to generate Cypher query after using tools
-            from langchain_core.messages import HumanMessage
-            
-            system_message = """You are a Cypher query expert. Use the available tools to search for companies, parameters, sectors, industries, and geography, then generate a valid Cypher query.
-
-Process:
-1. Use search_company to find the exact company name
-2. Use search_parameters to find exact parameter names
-3. Use search_sectors to find exact sector names when user mentions sectors
-4. Use search_industries to find exact industry names when user mentions industries
-5. Use search_geography to find exact country codes/names or region names when user mentions geography
-6. Use generate_parameter_query, generate_company_details_query, or generate_filter_query to generate the final Cypher query
-7. Your final response should contain ONLY a valid Cypher query, no explanations
-
-Generate Cypher queries that:
-- Match the exact company, parameter, sector, industry, and geography names from tool results
-- Include proper relationship patterns ([:HAS_PARAMETER], [:IN_COUNTRY], [:IN_SECTOR], [:IN_INDUSTRY], [:IN_REGION])
-- Return relevant fields (company_name, parameter_name, period, value, currency, sector, industry, country, etc.)
-- Handle period filtering (latest, specific quarters, FY periods)
-- Support filtering by sector, industry, country, region, or combinations
-
-Example final response format for parameter queries:
-MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
-WHERE c.company_name CONTAINS 'Exact Company Name' AND p.parameter_name CONTAINS 'Exact Parameter Name'
-RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency
-
-Example final response format for filter queries:
-MATCH (c:Company)-[:IN_COUNTRY]->(country:Country),
-      (c)-[:IN_SECTOR]->(s:Sector),
-      (c)-[:IN_INDUSTRY]->(i:Industry)
-WHERE s.name = 'Exact Sector Name' AND country.code = 'Exact Country Code'
-RETURN c.company_name, c.cid, s.name as sector, country.name as country, c.market_cap
-"""
+            # ✅ CORRECT: Use SystemMessage for system instructions, HumanMessage for user query
+            from langchain_core.messages import SystemMessage, HumanMessage
             
             messages = [
-                HumanMessage(content=system_message),
-                HumanMessage(content=f"Question: {question}")
+                SystemMessage(content=system_message),  # System-level instructions
+                HumanMessage(content=f"Question: {question}")  # User query
             ]
             
             # Max iterations for tool calling
@@ -964,8 +948,13 @@ RETURN c.company_name, c.cid, s.name as sector, country.name as country, c.marke
                                 self.log_manager.add_error_log(f'[Iteration {iteration + 1}] DUPLICATE tool call detected: {tool_name} with same args. Skipping duplicate execution.')
                             # Still log it but skip execution
                             from langchain_core.messages import ToolMessage
+                            # Compact error message for duplicate
+                            error_content = json.dumps({
+                                "error": "Duplicate tool call skipped",
+                                "original_result": tools_executed_this_iteration[tool_signature]
+                            }, separators=(',', ':'))
                             tool_message = ToolMessage(
-                                content=json.dumps({"error": "Duplicate tool call skipped", "original_result": tools_executed_this_iteration[tool_signature]}),
+                                content=error_content,
                                 tool_call_id=tool_call_id
                             )
                             tool_messages.append(tool_message)
@@ -1002,21 +991,42 @@ RETURN c.company_name, c.cid, s.name as sector, country.name as country, c.marke
                                 )
                             
                             # Format result for LLM (LangChain format)
+                            # ✅ OPTIMIZED: Use compact JSON to reduce token usage (~30% reduction)
                             from langchain_core.messages import ToolMessage
                             
+                            # Format tool result compactly
+                            if isinstance(tool_result, (dict, list)):
+                                # Compact JSON (no indentation, minimal whitespace)
+                                content = json.dumps(tool_result, separators=(',', ':'))
+                                # Truncate if too long (prevent token bloat)
+                                if len(content) > 2000:
+                                    content = content[:2000] + '..." (truncated)'
+                            else:
+                                content = str(tool_result)
+                            
                             tool_message = ToolMessage(
-                                content=json.dumps(tool_result, indent=2),
+                                content=content,
                                 tool_call_id=tool_call_id
                             )
                             tool_messages.append(tool_message)
                             
                         except Exception as e:
+                            # ✅ IMPROVED: Categorize errors for better LLM understanding
+                            error_type = type(e).__name__
+                            error_msg = str(e)
+                            
                             if self.log_manager:
-                                self.log_manager.add_error_log(f'Error executing tool {tool_name}: {str(e)}', e)
+                                self.log_manager.add_error_log(f'Error executing tool {tool_name} ({error_type}): {error_msg}', e)
                             
                             from langchain_core.messages import ToolMessage
+                            # Compact error message with type information
+                            error_content = json.dumps({
+                                "error": error_msg,
+                                "type": error_type
+                            }, separators=(',', ':'))
+                            
                             tool_message = ToolMessage(
-                                content=json.dumps({"error": str(e)}),
+                                content=error_content,
                                 tool_call_id=tool_call_id
                             )
                             tool_messages.append(tool_message)
@@ -1026,19 +1036,33 @@ RETURN c.company_name, c.cid, s.name as sector, country.name as country, c.marke
                     iteration += 1
                     continue
                 
-                # No more tool calls - extract final answer
-                final_content = response.content if hasattr(response, 'content') else str(response)
-                cypher_query = self._extract_cypher_query(final_content)
+                # ✅ IMPROVED: No more tool calls - validate and extract final answer
+                from langchain_core.messages import AIMessage
                 
-                if self._is_valid_cypher(cypher_query):
+                # Validate response is AIMessage
+                if not isinstance(response, AIMessage):
                     if self.log_manager:
-                        self.log_manager.add_info_log(f'Tool Calling generated valid Cypher query')
-                        self.log_manager.add_info_log(f'Generated Cypher Query:\n{cypher_query}')
-                    return cypher_query
+                        self.log_manager.add_info_log(f'[WARNING] Unexpected response type: {type(response)}')
+                    break
+                
+                # Check if response has content (not just tool calls)
+                if hasattr(response, 'content') and response.content:
+                    final_content = response.content
+                    cypher_query = self._extract_cypher_query(final_content)
+                    
+                    if self._is_valid_cypher(cypher_query):
+                        if self.log_manager:
+                            self.log_manager.add_info_log(f'Tool Calling generated valid Cypher query')
+                            self.log_manager.add_info_log(f'Generated Cypher Query:\n{cypher_query}')
+                        return cypher_query
+                    else:
+                        if self.log_manager:
+                            self.log_manager.add_info_log(f'Extracted query invalid, trying alternative extraction')
+                        break
                 else:
-                    # If extraction failed, try to get it from messages
+                    # No content and no tool calls - unexpected state
                     if self.log_manager:
-                        self.log_manager.add_info_log(f'Extracted query invalid, trying alternative extraction')
+                        self.log_manager.add_info_log('[WARNING] Response has no content and no tool calls')
                     break
             
             # If we get here, tool calling didn't produce valid query
