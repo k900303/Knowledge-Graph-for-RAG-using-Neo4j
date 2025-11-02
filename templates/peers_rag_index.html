@@ -414,6 +414,32 @@
             border-radius: 6px;
             border-left: 4px solid #fbbf24;
             animation: slideIn 0.3s ease;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .tool-call-entry:hover {
+            background: #1e293b;
+        }
+        
+        .tool-call-entry.collapsed .tool-call-details {
+            display: none;
+        }
+        
+        .tool-call-entry.expanded .tool-call-details {
+            display: block;
+        }
+        
+        .tool-call-toggle {
+            cursor: pointer;
+            user-select: none;
+            font-size: 0.9rem;
+            color: #94a3b8;
+            margin-left: 8px;
+        }
+        
+        .tool-call-details {
+            margin-top: 12px;
         }
         
         .tool-call-header {
@@ -630,7 +656,7 @@
                     </ul>
                 </div>
 
-                <button class="btn" onclick="initRAG()">⚙️ Initialize RAG Systems</button>
+                <button class="btn" onclick="initRAG(false)" id="initBtn" disabled>⚙️ Initializing RAG Systems...</button>
                 <button class="btn btn-secondary" onclick="testConnections()">🔍 Test Connections</button>
                 <button class="btn btn-secondary" onclick="loadCypherHistory()">📋 View Cypher History</button>
 
@@ -681,14 +707,17 @@
                 <div class="logs-container" style="display: none;" id="logsContainer">
                     <div class="logs-header">
                         <h3>📊 Live System Logs</h3>
-                        <button class="clear-logs-btn" onclick="clearLogs()">Clear Logs</button>
+                        <div>
+                            <button class="clear-logs-btn" onclick="clearLogs()" style="margin-right: 8px;">Clear Logs</button>
+                            <button class="clear-logs-btn" onclick="clearAllLogs()" style="background: #dc2626;">Clear All Logs</button>
+                        </div>
                     </div>
                     <div id="logsContent"></div>
                 </div>
 
                 <div class="logs-container" style="display: none;" id="toolCallLogsContainer">
                     <div class="logs-header">
-                        <h3>🔧 Tool Calling Logs</h3>
+                        <h3 id="toolCallLogsTitle">🔧 Tool Calling Logs (0 tools called)</h3>
                         <button class="clear-logs-btn" onclick="clearToolCallLogs()">Clear Logs</button>
                     </div>
                     <div id="toolCallLogsContent"></div>
@@ -828,8 +857,15 @@
             // Show container if hidden
             container.style.display = 'block';
             
+            // Update title with count
+            updateToolCallLogsTitle();
+            
+            // Create unique ID for this tool call
+            const toolCallId = `tool-call-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            
             const toolCallEntry = document.createElement('div');
-            toolCallEntry.className = 'tool-call-entry';
+            toolCallEntry.className = 'tool-call-entry collapsed';
+            toolCallEntry.id = toolCallId;
             
             // Format arguments for display
             let argsStr = '';
@@ -857,19 +893,22 @@
             const durationText = logData.duration_ms ? `(${logData.duration_ms}ms)` : '';
             
             toolCallEntry.innerHTML = `
-                <div class="tool-call-header">
+                <div class="tool-call-header" onclick="event.stopPropagation(); toggleToolCallEntry('${toolCallId}');">
                     <span class="tool-call-name">🔧 ${logData.tool_name || 'Unknown Tool'}</span>
                     <span class="tool-call-duration">[${logData.timestamp}] ${durationText}</span>
+                    <span class="tool-call-toggle">▼ Click to expand</span>
                 </div>
                 
-                <div class="tool-call-section">
-                    <div class="tool-call-section-label">📥 Arguments:</div>
-                    <div class="tool-call-section-content tool-call-args">${escapeHtml(argsStr) || 'No arguments'}</div>
-                </div>
-                
-                <div class="tool-call-section">
-                    <div class="tool-call-section-label">📤 Response:</div>
-                    <div class="tool-call-section-content tool-call-response">${escapeHtml(responseStr) || 'No response'}</div>
+                <div class="tool-call-details" style="display: none;">
+                    <div class="tool-call-section">
+                        <div class="tool-call-section-label">📥 Arguments:</div>
+                        <div class="tool-call-section-content tool-call-args">${escapeHtml(argsStr) || 'No arguments'}</div>
+                    </div>
+                    
+                    <div class="tool-call-section">
+                        <div class="tool-call-section-label">📤 Response:</div>
+                        <div class="tool-call-section-content tool-call-response">${escapeHtml(responseStr) || 'No response'}</div>
+                    </div>
                 </div>
             `;
             
@@ -884,7 +923,34 @@
                 const firstChild = toolCallLogsContent.firstElementChild;
                 if (firstChild) {
                     toolCallLogsContent.removeChild(firstChild);
+                    updateToolCallLogsTitle();
                 }
+            }
+        }
+        
+        function updateToolCallLogsTitle() {
+            const title = document.getElementById('toolCallLogsTitle');
+            const count = toolCallLogs.length;
+            title.textContent = `🔧 Tool Calling Logs (${count} ${count === 1 ? 'tool' : 'tools'} called)`;
+        }
+        
+        function toggleToolCallEntry(toolCallId) {
+            const entry = document.getElementById(toolCallId);
+            if (!entry) return;
+            
+            const details = entry.querySelector('.tool-call-details');
+            const toggle = entry.querySelector('.tool-call-toggle');
+            
+            if (entry.classList.contains('collapsed')) {
+                entry.classList.remove('collapsed');
+                entry.classList.add('expanded');
+                details.style.display = 'block';
+                toggle.textContent = '▲ Click to collapse';
+            } else {
+                entry.classList.remove('expanded');
+                entry.classList.add('collapsed');
+                details.style.display = 'none';
+                toggle.textContent = '▼ Click to expand';
             }
         }
 
@@ -903,6 +969,7 @@
             toolCallLogs = [];
             document.getElementById('toolCallLogsContent').innerHTML = '';
             document.getElementById('toolCallLogsContainer').style.display = 'none';
+            updateToolCallLogsTitle();
         }
 
         function toggleTraceback(tracebackId) {
@@ -919,8 +986,36 @@
         }
 
         function clearLogs() {
+            // Clear logs on frontend
             logEntries = [];
             document.getElementById('logsContent').innerHTML = '';
+            
+            // Clear logs on backend
+            fetch('/api/clear-logs', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    console.log('All logs cleared successfully');
+                } else {
+                    console.error('Failed to clear logs:', data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error clearing logs:', error);
+            });
+        }
+        
+        function clearAllLogs() {
+            // Clear all types of logs
+            clearLogs();
+            clearToolCallLogs();
+            clearCypherHistory();
+            
+            // Show confirmation
+            showAlert('All logs cleared successfully', 'success');
         }
 
         function loadCypherHistory() {
@@ -1007,8 +1102,14 @@
             }
         }
 
-        function initRAG() {
-            showAlert('Initializing RAG systems (Tool Calling: enabled by default)...', 'info');
+        function initRAG(silent = false) {
+            const initBtn = document.getElementById('initBtn');
+            
+            if (!silent) {
+                showAlert('Initializing RAG systems (Tool Calling: enabled by default)...', 'info');
+                initBtn.disabled = true;
+                initBtn.textContent = '⚙️ Initializing...';
+            }
             
             fetch('/api/init', {
                 method: 'POST',
@@ -1018,13 +1119,31 @@
             .then(data => {
                 if (data.status === 'success') {
                     isInitialized = true;
-                    showAlert('✅ RAG systems initialized successfully! (Tool Calling: Enabled)', 'success');
+                    initBtn.disabled = false;
+                    initBtn.textContent = '✅ RAG Systems Initialized';
+                    initBtn.style.background = '#059669';
+                    
+                    if (!silent) {
+                        showAlert('✅ RAG systems initialized successfully! (Tool Calling: Enabled)', 'success');
+                    }
                 } else {
-                    showAlert('❌ ' + data.message, 'error');
+                    initBtn.disabled = false;
+                    initBtn.textContent = '⚙️ Re-initialize RAG Systems';
+                    initBtn.style.background = '#2563eb';
+                    
+                    if (!silent) {
+                        showAlert('❌ ' + data.message, 'error');
+                    }
                 }
             })
             .catch(error => {
-                showAlert('❌ Error: ' + error.message, 'error');
+                initBtn.disabled = false;
+                initBtn.textContent = '⚙️ Re-initialize RAG Systems';
+                initBtn.style.background = '#2563eb';
+                
+                if (!silent) {
+                    showAlert('❌ Error: ' + error.message, 'error');
+                }
             });
         }
 
@@ -1332,9 +1451,11 @@
             }
         });
 
-        // Connect to log stream on page load
+        // Connect to log stream and auto-initialize RAG on page load
         window.addEventListener('load', function() {
             connectLogStream();
+            // Auto-initialize RAG systems on page load
+            initRAG(true); // silent = true to avoid showing alerts on auto-init
         });
     </script>
 </body>

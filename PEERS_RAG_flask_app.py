@@ -125,6 +125,11 @@ class LogManager:
         """Unsubscribe from log updates"""
         if callback in self.listeners:
             self.listeners.remove(callback)
+    
+    def clear_all_logs(self):
+        """Clear all logs from the log manager"""
+        with self.lock:
+            self.logs = []
 
 log_manager = LogManager()
 
@@ -359,6 +364,15 @@ def api_clear_cypher_history():
         return jsonify({'status': 'success', 'message': 'Cypher history cleared'})
     except Exception as e:
         log_manager.add_error_log(f'Failed to clear Cypher history: {str(e)}', e)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/clear-logs', methods=['POST'])
+def api_clear_logs():
+    """Clear all logs from the log manager"""
+    try:
+        log_manager.clear_all_logs()
+        return jsonify({'status': 'success', 'message': 'All logs cleared successfully'})
+    except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 

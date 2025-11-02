@@ -288,6 +288,335 @@ class CompanySearchTool(BaseToolHandler):
             }
 
 
+class SectorSearchTool(BaseToolHandler):
+    """Tool for searching sectors in the database"""
+    
+    def get_tool_definition(self) -> Dict:
+        """Return tool definition for OpenAI function calling"""
+        return {
+            "type": "function",
+            "function": {
+                "name": "search_sectors",
+                "description": "Search for sectors in the database by name. Use this when user mentions a sector like 'Technology', 'Financials', 'Healthcare', etc. Returns exact sector names from database.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "search_term": {
+                            "type": "string",
+                            "description": "Sector name or partial name to search for (e.g., 'Technology', 'Financials', 'Healthcare')"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of results to return",
+                            "default": 20
+                        }
+                    },
+                    "required": ["search_term"]
+                }
+            }
+        }
+    
+    def execute(self, search_term: str, limit: int = 20) -> Dict[str, Any]:
+        """Execute sector search with fuzzy matching"""
+        try:
+            if self.log_manager:
+                self.log_manager.add_info_log(f'Tool: search_sectors called with term="{search_term}", limit={limit}')
+            
+            # Escape single quotes to prevent Cypher injection
+            escaped_term = search_term.replace("'", "\\'")
+            
+            # Use case-insensitive matching
+            query = f"""
+            MATCH (s:Sector)
+            WHERE toLower(s.name) CONTAINS toLower('{escaped_term}')
+               OR toLower(s.name) STARTS WITH toLower('{escaped_term}')
+            RETURN DISTINCT s.name, s.sector_id
+            ORDER BY 
+                CASE 
+                    WHEN toLower(s.name) = toLower('{escaped_term}') THEN 0
+                    WHEN toLower(s.name) STARTS WITH toLower('{escaped_term}') THEN 1
+                    ELSE 2 
+                END,
+                s.name
+            LIMIT {limit}
+            """
+            
+            results = graph.query(query)
+            
+            sectors = [
+                {
+                    "name": row['s.name'],
+                    "sector_id": str(row['s.sector_id']) if row.get('s.sector_id') else None
+                }
+                for row in results
+            ]
+            
+            if self.log_manager:
+                self.log_manager.add_info_log(f'Found {len(sectors)} sector matches for "{search_term}"')
+            
+            result = {
+                "sectors": sectors,
+                "search_term": search_term,
+                "total_found": len(sectors)
+            }
+            
+            # Log tool call result
+            if self.log_manager and hasattr(self.log_manager, 'add_tool_call_log'):
+                self.log_manager.add_tool_call_log(
+                    tool_name="search_sectors",
+                    arguments={"search_term": search_term, "limit": limit},
+                    response=result,
+                    duration_ms=None
+                )
+            
+            return result
+            
+        except Exception as e:
+            if self.log_manager:
+                self.log_manager.add_error_log(f'Error in search_sectors tool: {str(e)}', e)
+            return {
+                "sectors": [],
+                "error": str(e),
+                "message": "Error searching sectors",
+                "search_term": search_term
+            }
+
+
+class IndustrySearchTool(BaseToolHandler):
+    """Tool for searching industries in the database"""
+    
+    def get_tool_definition(self) -> Dict:
+        """Return tool definition for OpenAI function calling"""
+        return {
+            "type": "function",
+            "function": {
+                "name": "search_industries",
+                "description": "Search for industries in the database by name. Use this when user mentions an industry like 'Software', 'Banks', 'Pharmaceuticals', etc. Returns exact industry names from database.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "search_term": {
+                            "type": "string",
+                            "description": "Industry name or partial name to search for (e.g., 'Software', 'Banks', 'Pharmaceuticals')"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of results to return",
+                            "default": 30
+                        }
+                    },
+                    "required": ["search_term"]
+                }
+            }
+        }
+    
+    def execute(self, search_term: str, limit: int = 30) -> Dict[str, Any]:
+        """Execute industry search with fuzzy matching"""
+        try:
+            if self.log_manager:
+                self.log_manager.add_info_log(f'Tool: search_industries called with term="{search_term}", limit={limit}')
+            
+            # Escape single quotes to prevent Cypher injection
+            escaped_term = search_term.replace("'", "\\'")
+            
+            # Use case-insensitive matching
+            query = f"""
+            MATCH (i:Industry)
+            WHERE toLower(i.name) CONTAINS toLower('{escaped_term}')
+               OR toLower(i.name) STARTS WITH toLower('{escaped_term}')
+            RETURN DISTINCT i.name, i.industry_id
+            ORDER BY 
+                CASE 
+                    WHEN toLower(i.name) = toLower('{escaped_term}') THEN 0
+                    WHEN toLower(i.name) STARTS WITH toLower('{escaped_term}') THEN 1
+                    ELSE 2 
+                END,
+                i.name
+            LIMIT {limit}
+            """
+            
+            results = graph.query(query)
+            
+            industries = [
+                {
+                    "name": row['i.name'],
+                    "industry_id": str(row['i.industry_id']) if row.get('i.industry_id') else None
+                }
+                for row in results
+            ]
+            
+            if self.log_manager:
+                self.log_manager.add_info_log(f'Found {len(industries)} industry matches for "{search_term}"')
+            
+            result = {
+                "industries": industries,
+                "search_term": search_term,
+                "total_found": len(industries)
+            }
+            
+            # Log tool call result
+            if self.log_manager and hasattr(self.log_manager, 'add_tool_call_log'):
+                self.log_manager.add_tool_call_log(
+                    tool_name="search_industries",
+                    arguments={"search_term": search_term, "limit": limit},
+                    response=result,
+                    duration_ms=None
+                )
+            
+            return result
+            
+        except Exception as e:
+            if self.log_manager:
+                self.log_manager.add_error_log(f'Error in search_industries tool: {str(e)}', e)
+            return {
+                "industries": [],
+                "error": str(e),
+                "message": "Error searching industries",
+                "search_term": search_term
+            }
+
+
+class GeographySearchTool(BaseToolHandler):
+    """Tool for searching countries and regions in the database"""
+    
+    def get_tool_definition(self) -> Dict:
+        """Return tool definition for OpenAI function calling"""
+        return {
+            "type": "function",
+            "function": {
+                "name": "search_geography",
+                "description": "Search for countries or regions in the database. Supports country names, country codes, and region names. Use this when user mentions geography like 'India', 'US', 'Asia', etc.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "search_term": {
+                            "type": "string",
+                            "description": "Country name, country code, or region name to search for (e.g., 'India', 'US', 'IN', 'Asia')"
+                        },
+                        "search_type": {
+                            "type": "string",
+                            "description": "Type of search: 'country', 'region', or 'both' (default: 'both')",
+                            "enum": ["country", "region", "both"],
+                            "default": "both"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of results to return",
+                            "default": 20
+                        }
+                    },
+                    "required": ["search_term"]
+                }
+            }
+        }
+    
+    def execute(self, search_term: str, search_type: str = "both", limit: int = 20) -> Dict[str, Any]:
+        """Execute geography search (countries and/or regions)"""
+        try:
+            if self.log_manager:
+                self.log_manager.add_info_log(f'Tool: search_geography called with term="{search_term}", type={search_type}, limit={limit}')
+            
+            # Escape single quotes
+            escaped_term = search_term.replace("'", "\\'")
+            
+            results_list = []
+            
+            # Search countries if requested
+            if search_type in ["country", "both"]:
+                country_query = f"""
+                MATCH (c:Country)
+                WHERE toLower(c.name) CONTAINS toLower('{escaped_term}')
+                   OR toLower(c.name) STARTS WITH toLower('{escaped_term}')
+                   OR toLower(c.code) = toUpper('{escaped_term}')
+                   OR toLower(c.code) CONTAINS toLower('{escaped_term}')
+                RETURN DISTINCT c.name, c.code
+                ORDER BY 
+                    CASE 
+                        WHEN toLower(c.code) = toUpper('{escaped_term}') THEN 0
+                        WHEN toLower(c.name) = toLower('{escaped_term}') THEN 1
+                        WHEN toLower(c.name) STARTS WITH toLower('{escaped_term}') THEN 2
+                        WHEN toLower(c.code) CONTAINS toLower('{escaped_term}') THEN 3
+                        ELSE 4 
+                    END,
+                    c.name
+                LIMIT {limit}
+                """
+                
+                country_results = graph.query(country_query)
+                for row in country_results:
+                    results_list.append({
+                        "name": row['c.name'],
+                        "code": row['c.code'],
+                        "type": "country"
+                    })
+            
+            # Search regions if requested
+            if search_type in ["region", "both"]:
+                region_query = f"""
+                MATCH (r:Region)
+                WHERE toLower(r.name) CONTAINS toLower('{escaped_term}')
+                   OR toLower(r.name) STARTS WITH toLower('{escaped_term}')
+                RETURN DISTINCT r.name
+                ORDER BY 
+                    CASE 
+                        WHEN toLower(r.name) = toLower('{escaped_term}') THEN 0
+                        WHEN toLower(r.name) STARTS WITH toLower('{escaped_term}') THEN 1
+                        ELSE 2 
+                    END,
+                    r.name
+                LIMIT {limit}
+                """
+                
+                region_results = graph.query(region_query)
+                for row in region_results:
+                    results_list.append({
+                        "name": row['r.name'],
+                        "code": None,
+                        "type": "region"
+                    })
+            
+            # Sort combined results by relevance (countries first if exact code match, then by name)
+            results_list.sort(key=lambda x: (
+                0 if x.get('code') and x.get('code').upper() == search_term.upper() else 1,
+                x['name'].lower()
+            ))
+            
+            # Limit total results
+            results_list = results_list[:limit]
+            
+            if self.log_manager:
+                self.log_manager.add_info_log(f'Found {len(results_list)} geography matches for "{search_term}"')
+            
+            result = {
+                "results": results_list,
+                "search_term": search_term,
+                "search_type": search_type,
+                "total_found": len(results_list)
+            }
+            
+            # Log tool call result
+            if self.log_manager and hasattr(self.log_manager, 'add_tool_call_log'):
+                self.log_manager.add_tool_call_log(
+                    tool_name="search_geography",
+                    arguments={"search_term": search_term, "search_type": search_type, "limit": limit},
+                    response=result,
+                    duration_ms=None
+                )
+            
+            return result
+            
+        except Exception as e:
+            if self.log_manager:
+                self.log_manager.add_error_log(f'Error in search_geography tool: {str(e)}', e)
+            return {
+                "results": [],
+                "error": str(e),
+                "message": "Error searching geography",
+                "search_term": search_term,
+                "search_type": search_type
+            }
+
+
 class CypherGeneratorTool(BaseToolHandler):
     """Tool for generating Cypher queries"""
     
@@ -648,12 +977,18 @@ class ToolRegistry:
         # Initialize tools
         self.parameter_search_tool = ParameterSearchTool(log_manager, self.embedding_cache)
         self.company_search_tool = CompanySearchTool(log_manager)
+        self.sector_search_tool = SectorSearchTool(log_manager)
+        self.industry_search_tool = IndustrySearchTool(log_manager)
+        self.geography_search_tool = GeographySearchTool(log_manager)
         self.cypher_generator_tool = CypherGeneratorTool(log_manager)
         
         # Register all tools
         self.tools = {
             "search_parameters": self.parameter_search_tool,
             "search_company": self.company_search_tool,
+            "search_sectors": self.sector_search_tool,
+            "search_industries": self.industry_search_tool,
+            "search_geography": self.geography_search_tool,
             "generate_parameter_query": self.cypher_generator_tool,
             "generate_company_details_query": self.cypher_generator_tool,
             "generate_filter_query": self.cypher_generator_tool
@@ -666,6 +1001,9 @@ class ToolRegistry:
         # Add search tools
         tools.append(self.parameter_search_tool.get_tool_definition())
         tools.append(self.company_search_tool.get_tool_definition())
+        tools.append(self.sector_search_tool.get_tool_definition())
+        tools.append(self.industry_search_tool.get_tool_definition())
+        tools.append(self.geography_search_tool.get_tool_definition())
         
         # Add generator tools (they return dict of multiple tools)
         generator_defs = self.cypher_generator_tool.get_tool_definition()

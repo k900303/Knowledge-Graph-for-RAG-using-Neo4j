@@ -873,24 +873,35 @@ class PEERSGraphRAG:
             # Include instruction to generate Cypher query after using tools
             from langchain_core.messages import HumanMessage
             
-            system_message = """You are a Cypher query expert. Use the available tools to search for companies and parameters, then generate a valid Cypher query.
+            system_message = """You are a Cypher query expert. Use the available tools to search for companies, parameters, sectors, industries, and geography, then generate a valid Cypher query.
 
 Process:
 1. Use search_company to find the exact company name
 2. Use search_parameters to find exact parameter names
-3. Use generate_parameter_query or generate_company_details_query to generate the final Cypher query
-4. Your final response should contain ONLY a valid Cypher query, no explanations
+3. Use search_sectors to find exact sector names when user mentions sectors
+4. Use search_industries to find exact industry names when user mentions industries
+5. Use search_geography to find exact country codes/names or region names when user mentions geography
+6. Use generate_parameter_query, generate_company_details_query, or generate_filter_query to generate the final Cypher query
+7. Your final response should contain ONLY a valid Cypher query, no explanations
 
 Generate Cypher queries that:
-- Match the exact company and parameter names from tool results
-- Include proper relationship patterns ([:HAS_PARAMETER], [:IN_COUNTRY], etc.)
-- Return relevant fields (company_name, parameter_name, period, value, currency, etc.)
+- Match the exact company, parameter, sector, industry, and geography names from tool results
+- Include proper relationship patterns ([:HAS_PARAMETER], [:IN_COUNTRY], [:IN_SECTOR], [:IN_INDUSTRY], [:IN_REGION])
+- Return relevant fields (company_name, parameter_name, period, value, currency, sector, industry, country, etc.)
 - Handle period filtering (latest, specific quarters, FY periods)
+- Support filtering by sector, industry, country, region, or combinations
 
-Example final response format:
+Example final response format for parameter queries:
 MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
 WHERE c.company_name CONTAINS 'Exact Company Name' AND p.parameter_name CONTAINS 'Exact Parameter Name'
 RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency
+
+Example final response format for filter queries:
+MATCH (c:Company)-[:IN_COUNTRY]->(country:Country),
+      (c)-[:IN_SECTOR]->(s:Sector),
+      (c)-[:IN_INDUSTRY]->(i:Industry)
+WHERE s.name = 'Exact Sector Name' AND country.code = 'Exact Country Code'
+RETURN c.company_name, c.cid, s.name as sector, country.name as country, c.market_cap
 """
             
             messages = [
