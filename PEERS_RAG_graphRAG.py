@@ -914,6 +914,9 @@ RETURN c.company_name, c.cid, s.name as sector, country.name as country, c.marke
             iteration = 0
             
             while iteration < max_iterations:
+                if self.log_manager:
+                    self.log_manager.add_info_log(f'Tool Calling Iteration {iteration + 1}/{max_iterations}')
+                
                 # Call LLM with current messages
                 response = self.llm_with_tools.invoke(messages)
                 
@@ -922,13 +925,14 @@ RETURN c.company_name, c.cid, s.name as sector, country.name as country, c.marke
                 tool_calls = getattr(response, 'tool_calls', None) or []
                 if tool_calls:
                     if self.log_manager:
-                        self.log_manager.add_info_log(f'LLM requested {len(tool_calls)} tool calls')
+                        self.log_manager.add_info_log(f'[Iteration {iteration + 1}] LLM requested {len(tool_calls)} tool call(s)')
                     
                     # Add LLM response to conversation (response is already AIMessage with tool_calls)
                     messages.append(response)
                     
                     # Execute all requested tools
                     tool_messages = []
+                    tools_executed_this_iteration = []  # Track tools executed to detect duplicates
                     for tool_call in tool_calls:
                         # Extract tool name and arguments from LangChain tool_call object
                         if hasattr(tool_call, 'name'):
@@ -953,20 +957,37 @@ RETURN c.company_name, c.cid, s.name as sector, country.name as country, c.marke
                         # Get tool call ID for response
                         tool_call_id = getattr(tool_call, 'id', None) or (tool_call.get('id', '') if isinstance(tool_call, dict) else '')
                         
+                        # Check for duplicate tool call in same iteration
+                        tool_signature = f"{tool_name}_{str(tool_args)}"
+                        if tool_signature in tools_executed_this_iteration:
+                            if self.log_manager:
+                                self.log_manager.add_error_log(f'[Iteration {iteration + 1}] DUPLICATE tool call detected: {tool_name} with same args. Skipping duplicate execution.')
+                            # Still log it but skip execution
+                            from langchain_core.messages import ToolMessage
+                            tool_message = ToolMessage(
+                                content=json.dumps({"error": "Duplicate tool call skipped", "original_result": tools_executed_this_iteration[tool_signature]}),
+                                tool_call_id=tool_call_id
+                            )
+                            tool_messages.append(tool_message)
+                            continue
+                        
                         try:
                             import time
                             start_time = time.time()
                             
                             if self.log_manager:
-                                self.log_manager.add_info_log(f'Executing tool: {tool_name} with args: {tool_args}')
+                                self.log_manager.add_info_log(f'[Iteration {iteration + 1}] Executing tool: {tool_name} with args: {tool_args}')
                             
                             # Execute tool via registry
                             tool_result = self.tool_registry.execute_tool(tool_name, **tool_args)
                             
+                            # Store in executed tools to prevent duplicates
+                            tools_executed_this_iteration[tool_signature] = tool_result
+                            
                             # Calculate duration
                             duration_ms = int((time.time() - start_time) * 1000)
                             
-                            # Log tool call details
+                            # Log tool call details with iteration info
                             if self.log_manager and hasattr(self.log_manager, 'add_tool_call_log'):
                                 # Format response for display (truncate if too long)
                                 response_str = json.dumps(tool_result, indent=2)
@@ -976,7 +997,8 @@ RETURN c.company_name, c.cid, s.name as sector, country.name as country, c.marke
                                     tool_name=tool_name,
                                     arguments=tool_args,
                                     response=tool_result,
-                                    duration_ms=duration_ms
+                                    duration_ms=duration_ms,
+                                    iteration=iteration + 1
                                 )
                             
                             # Format result for LLM (LangChain format)

@@ -101,7 +101,7 @@ class LogManager:
         
         self.add_log('info', message, file_info)
     
-    def add_tool_call_log(self, tool_name, arguments, response, duration_ms=None):
+    def add_tool_call_log(self, tool_name, arguments, response, duration_ms=None, iteration=None):
         """Add a tool calling log with tool name, arguments, and response"""
         timestamp = time.strftime("%H:%M:%S")
         log_entry = {
@@ -110,7 +110,8 @@ class LogManager:
             'tool_name': tool_name,
             'arguments': arguments,
             'response': response,
-            'duration_ms': duration_ms
+            'duration_ms': duration_ms,
+            'iteration': iteration  # Track which iteration this tool was called in
         }
         self.logs.append(log_entry)
         # Send to all listeners

@@ -19,7 +19,8 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 90%;
+            width: 90%;
             margin: 0 auto;
         }
 
@@ -41,8 +42,8 @@
 
         .main-content {
             display: grid;
-            grid-template-columns: 300px 1fr;
-            gap: 20px;
+            grid-template-columns: 320px 1fr 380px;
+            gap: 25px;
             margin-top: 20px;
         }
 
@@ -51,6 +52,8 @@
             border-radius: 10px;
             padding: 20px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            max-height: calc(100vh - 150px);
+            overflow-y: auto;
         }
 
         .content {
@@ -58,6 +61,202 @@
             border-radius: 10px;
             padding: 30px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            max-height: calc(100vh - 150px);
+            overflow-y: auto;
+        }
+        
+        .flow-diagram {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            max-height: calc(100vh - 150px);
+            overflow-y: auto;
+        }
+        
+        .query-history-sidebar {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #e5e7eb;
+        }
+        
+        .query-history-sidebar h3 {
+            color: #2563eb;
+            margin-bottom: 15px;
+            font-size: 1rem;
+        }
+        
+        .history-query-item {
+            padding: 12px;
+            margin-bottom: 10px;
+            background: #f9fafb;
+            border-radius: 6px;
+            border-left: 3px solid #2563eb;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .history-query-item:hover {
+            background: #eff6ff;
+            border-left-color: #3b82f6;
+            transform: translateX(3px);
+        }
+        
+        .history-query-item .query-text {
+            font-weight: 500;
+            color: #1f2937;
+            margin-bottom: 4px;
+            font-size: 0.9rem;
+        }
+        
+        .history-query-item .query-meta {
+            font-size: 0.75rem;
+            color: #6b7280;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .history-query-item .query-mode {
+            padding: 2px 6px;
+            background: #2563eb;
+            color: white;
+            border-radius: 3px;
+            font-size: 0.7rem;
+        }
+        
+        .query-input-container {
+            position: relative;
+        }
+        
+        .query-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 2px solid #2563eb;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: none;
+        }
+        
+        .suggestion-item {
+            padding: 12px 15px;
+            cursor: pointer;
+            border-bottom: 1px solid #e5e7eb;
+            transition: background 0.2s;
+        }
+        
+        .suggestion-item:hover {
+            background: #f3f4f6;
+        }
+        
+        .suggestion-item:last-child {
+            border-bottom: none;
+        }
+        
+        .suggestion-item .suggestion-text {
+            font-weight: 500;
+            color: #1f2937;
+            margin-bottom: 4px;
+        }
+        
+        .suggestion-item .suggestion-count {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+        
+        .flow-diagram-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #2563eb;
+        }
+        
+        .flow-diagram-header h3 {
+            color: #2563eb;
+            margin: 0;
+        }
+        
+        .flow-diagram-content {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: #1f2937;
+        }
+        
+        .flow-step {
+            margin-bottom: 12px;
+            padding: 10px;
+            background: #f9fafb;
+            border-left: 3px solid #2563eb;
+            border-radius: 4px;
+            animation: slideInRight 0.3s ease;
+        }
+        
+        .flow-step.active {
+            background: #eff6ff;
+            border-left-color: #3b82f6;
+        }
+        
+        .flow-step.completed {
+            background: #f0fdf4;
+            border-left-color: #10b981;
+        }
+        
+        .flow-step.error {
+            background: #fef2f2;
+            border-left-color: #ef4444;
+        }
+        
+        .flow-arrow {
+            color: #2563eb;
+            text-align: center;
+            margin: 4px 0;
+            font-weight: bold;
+        }
+        
+        .flow-decision {
+            background: #fff7ed;
+            border: 2px dashed #f59e0b;
+            padding: 8px;
+            margin: 8px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        
+        .flow-tool-call {
+            background: #fef3c7;
+            border-left: 3px solid #fbbf24;
+            padding: 8px;
+            margin: 4px 0;
+            border-radius: 4px;
+        }
+        
+        .flow-result {
+            background: #d1fae5;
+            border-left: 3px solid #10b981;
+            padding: 8px;
+            margin: 4px 0;
+            border-radius: 4px;
+        }
+        
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
         }
 
         .stats-box {
@@ -327,13 +526,14 @@
         /* Live logging styles */
         .logs-container {
             margin-top: 20px;
-            max-height: 400px;
+            max-height: 550px;
             overflow-y: auto;
             background: #1e293b;
             border-radius: 8px;
-            padding: 15px;
+            padding: 20px;
             font-family: 'Courier New', monospace;
-            font-size: 0.85rem;
+            font-size: 0.9rem;
+            line-height: 1.8;
         }
 
         .logs-header {
@@ -351,11 +551,17 @@
 
         .log-entry {
             display: flex;
-            margin-bottom: 8px;
-            padding: 8px;
+            margin-bottom: 10px;
+            padding: 12px;
             background: #0f172a;
-            border-radius: 4px;
+            border-radius: 6px;
             animation: slideIn 0.3s ease;
+            border-left: 3px solid transparent;
+        }
+        
+        .log-entry:hover {
+            background: #1e293b;
+            border-left-color: #2563eb;
         }
 
         @keyframes slideIn {
@@ -674,15 +880,13 @@
                     </small>
                 </div>
 
-                <div class="example-queries">
-                    <h3>💡 Examples</h3>
-                    <button class="example-btn" onclick="setQuery('Which companies are in the Technology sector?')">Tech companies</button>
-                    <button class="example-btn" onclick="setQuery('Show me companies listed on NASDAQ')">NASDAQ listings</button>
-                    <button class="example-btn" onclick="setQuery('Find pharmaceutical companies')">Pharma companies</button>
-                    <button class="example-btn" onclick="setQuery('List companies with positive change')">Top performers</button>
-                    <button class="example-btn" onclick="setQuery('Which US companies are in Healthcare?')">US Healthcare</button>
-                    <button class="example-btn" onclick="setQuery('Show me companies in Asia')">Asia companies</button>
-                    <button class="example-btn" onclick="setQuery('Find large companies with market cap over 1 billion')">Large companies</button>
+                <div class="query-history-sidebar">
+                    <h3>📜 Recent Queries</h3>
+                    <div id="sidebarHistoryContent">
+                        <div style="color: #9ca3af; text-align: center; padding: 20px; font-size: 0.85rem;">
+                            Your query history will appear here...
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -690,7 +894,10 @@
                 <div id="alerts"></div>
 
                 <div class="query-form">
-                    <input type="text" id="queryInput" placeholder="Enter your query about companies..." />
+                    <div class="query-input-container">
+                        <input type="text" id="queryInput" placeholder="Enter your query about companies..." autocomplete="off" />
+                        <div class="query-suggestions" id="querySuggestions"></div>
+                    </div>
                     <button class="btn" onclick="submitQuery()">🚀 Submit Query</button>
                 </div>
 
@@ -731,6 +938,18 @@
                     <div id="cypherHistoryContent"></div>
                 </div>
             </div>
+            
+            <div class="flow-diagram">
+                <div class="flow-diagram-header">
+                    <h3>🔄 Query Flow Diagram</h3>
+                    <button class="clear-logs-btn" onclick="clearFlowDiagram()" style="font-size: 0.8rem; padding: 4px 10px;">Clear</button>
+                </div>
+                <div class="flow-diagram-content" id="flowDiagramContent">
+                    <div style="color: #9ca3af; text-align: center; padding: 20px;">
+                        Query flow will appear here...
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -740,6 +959,8 @@
         let eventSource = null;
         let logEntries = [];
         let toolCallLogs = [];
+        let flowSteps = [];
+        let currentQueryFlow = null;
 
         function showAlert(message, type = 'info') {
             const alertsDiv = document.getElementById('alerts');
@@ -770,6 +991,30 @@
                         addToolCallLog(logData);
                     } else {
                         addLogEntry(logData);
+                        
+                        // Update flow diagram based on log messages
+                        if (logData.message && currentQueryFlow) {
+                            const msg = logData.message.toLowerCase();
+                            if (msg.includes('generating cypher query') || msg.includes('step 1')) {
+                                addFlowStep('decision', `🤔 Decision: Generating Cypher Query\nUsing Tool Calling approach`, 'active');
+                            } else if (msg.includes('executing cypher query') || msg.includes('step 2')) {
+                                addFlowStep('cypher_execution', `⚡ Executing Cypher Query\nQuerying Neo4j Database`, 'active');
+                            } else if (msg.includes('retrieving') && msg.includes('chunks') || msg.includes('step 3')) {
+                                addFlowStep('chunk_retrieval', `📚 Retrieving Relevant Chunks\nFetching text context`, 'active');
+                            } else if (msg.includes('synthesizing') || msg.includes('step 4')) {
+                                addFlowStep('synthesis', `🧠 Synthesizing Final Answer\nCombining structured data + chunks`, 'active');
+                            } else if (msg.includes('cypher query generated')) {
+                                addFlowStep('cypher_generated', `✅ Cypher Query Generated\nQuery ready for execution`, 'completed');
+                            } else if (msg.includes('semantic search')) {
+                                addFlowStep('vector_search', `🔍 Vector Search Started\nFinding semantically similar content`, 'active');
+                            } else if (msg.includes('cypher query generated successfully')) {
+                                // Mark previous step as completed
+                                if (flowSteps.length > 0) {
+                                    flowSteps[flowSteps.length - 1].status = 'completed';
+                                    updateFlowDiagram();
+                                }
+                            }
+                        }
                     }
                 } catch (e) {
                     console.error('Failed to parse log data:', e);
@@ -850,6 +1095,21 @@
         }
 
         function addToolCallLog(logData) {
+            // Create unique key for this tool call to detect duplicates
+            const toolCallKey = `${logData.tool_name}_${JSON.stringify(logData.arguments)}_${logData.timestamp}_${logData.iteration || '0'}`;
+            
+            // Check for exact duplicates (same tool, same args, same timestamp, same iteration)
+            const isDuplicate = toolCallLogs.some(existing => {
+                const existingKey = `${existing.tool_name}_${JSON.stringify(existing.arguments)}_${existing.timestamp}_${existing.iteration || '0'}`;
+                return existingKey === toolCallKey;
+            });
+            
+            if (isDuplicate) {
+                console.warn('Duplicate tool call detected:', logData);
+                // Still add but mark it as duplicate
+                logData.is_duplicate = true;
+            }
+            
             toolCallLogs.push(logData);
             const toolCallLogsContent = document.getElementById('toolCallLogsContent');
             const container = document.getElementById('toolCallLogsContainer');
@@ -857,8 +1117,35 @@
             // Show container if hidden
             container.style.display = 'block';
             
-            // Update title with count
+            // Update title with count (excluding duplicates in count)
             updateToolCallLogsTitle();
+            
+            // Add to flow diagram
+            let argsSummary = '';
+            if (logData.arguments) {
+                try {
+                    const args = JSON.stringify(logData.arguments);
+                    argsSummary = args.length > 50 ? args.substring(0, 50) + '...' : args;
+                } catch {
+                    argsSummary = String(logData.arguments).substring(0, 50);
+                }
+            }
+            
+            const iterationInfo = logData.iteration ? ` (Iteration ${logData.iteration})` : '';
+            const duplicateMarker = logData.is_duplicate ? ' ⚠️ DUPLICATE' : '';
+            addFlowStep('tool_call', `🔧 Tool Called: ${logData.tool_name || 'Unknown'}${iterationInfo}${duplicateMarker}\nArgs: ${argsSummary || 'None'}\nDuration: ${logData.duration_ms || 'N/A'}ms`, logData.is_duplicate ? 'error' : 'active');
+            
+            // Show tool result in flow
+            if (logData.response) {
+                let responseSummary = '';
+                try {
+                    const response = JSON.stringify(logData.response);
+                    responseSummary = response.length > 100 ? response.substring(0, 100) + '...' : response;
+                } catch {
+                    responseSummary = String(logData.response).substring(0, 100);
+                }
+                addFlowStep('tool_result', `📤 Tool Result:\n${responseSummary}`, 'completed');
+            }
             
             // Create unique ID for this tool call
             const toolCallId = `tool-call-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -892,9 +1179,11 @@
             
             const durationText = logData.duration_ms ? `(${logData.duration_ms}ms)` : '';
             
+            const iterationText = logData.iteration ? `Iteration ${logData.iteration}` : '';
+            const duplicateBadge = logData.is_duplicate ? '<span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; margin-left: 6px;">⚠️ DUPLICATE</span>' : '';
             toolCallEntry.innerHTML = `
                 <div class="tool-call-header" onclick="event.stopPropagation(); toggleToolCallEntry('${toolCallId}');">
-                    <span class="tool-call-name">🔧 ${logData.tool_name || 'Unknown Tool'}</span>
+                    <span class="tool-call-name">🔧 ${logData.tool_name || 'Unknown Tool'} ${iterationText ? `(${iterationText})` : ''}${duplicateBadge}</span>
                     <span class="tool-call-duration">[${logData.timestamp}] ${durationText}</span>
                     <span class="tool-call-toggle">▼ Click to expand</span>
                 </div>
@@ -930,8 +1219,16 @@
         
         function updateToolCallLogsTitle() {
             const title = document.getElementById('toolCallLogsTitle');
-            const count = toolCallLogs.length;
-            title.textContent = `🔧 Tool Calling Logs (${count} ${count === 1 ? 'tool' : 'tools'} called)`;
+            const totalCount = toolCallLogs.length;
+            const uniqueCount = new Set(toolCallLogs.map(log => `${log.tool_name}_${JSON.stringify(log.arguments)}_${log.iteration || '0'}`)).size;
+            const duplicateCount = totalCount - uniqueCount;
+            
+            let titleText = `🔧 Tool Calling Logs (${uniqueCount} unique ${uniqueCount === 1 ? 'tool' : 'tools'}`;
+            if (duplicateCount > 0) {
+                titleText += `, ${duplicateCount} duplicate${duplicateCount === 1 ? '' : 's'}`;
+            }
+            titleText += `)`;
+            title.textContent = titleText;
         }
         
         function toggleToolCallEntry(toolCallId) {
@@ -1186,6 +1483,24 @@
             
             showAlert('Processing query...', 'info');
             
+            // Initialize new flow diagram
+            currentQueryFlow = {
+                query: query,
+                mode: mode,
+                startTime: new Date(),
+                steps: []
+            };
+            flowSteps = [];
+            updateFlowDiagram();
+            addFlowStep('query_received', `📥 Query Received\n"${query}"\nMode: ${mode}`, 'active');
+            
+            // Add decision step based on mode
+            if (mode === 'GraphRAG') {
+                addFlowStep('decision', `🤔 Decision: Using GraphRAG\nStructured query with Cypher`, 'active');
+            } else {
+                addFlowStep('decision', `🤔 Decision: Using VectorRAG\nSemantic search approach`, 'active');
+            }
+            
             document.getElementById('results').style.display = 'block';
             document.getElementById('resultContent').innerHTML = '<div class="loading">⏳ Processing your query...</div>';
 
@@ -1207,6 +1522,10 @@
                         formattedResult = formatMarkdownTable(data.result);
                     }
                     
+                    // Update flow diagram with success
+                    addFlowStep('result_generated', `✅ Result Generated\n${data.result.substring(0, 100)}${data.result.length > 100 ? '...' : ''}`, 'completed');
+                    addFlowStep('query_complete', `🎉 Query Completed Successfully\nDuration: ${((new Date() - currentQueryFlow.startTime) / 1000).toFixed(2)}s`, 'completed');
+                    
                     document.getElementById('resultContent').innerHTML = 
                         `<div><strong>Query:</strong> ${data.query}</div>
                          <div style="color: #6b7280; margin: 10px 0;"><strong>Mode:</strong> ${data.mode}</div>
@@ -1217,7 +1536,8 @@
                     queryHistory.unshift({
                         query: data.query,
                         mode: data.mode,
-                        result: data.result
+                        result: data.result,
+                        timestamp: new Date().toLocaleTimeString()
                     });
                     updateHistory();
                     
@@ -1228,19 +1548,92 @@
                     
                     showAlert('✅ Query completed!', 'success');
                 } else {
+                    addFlowStep('error', `❌ Error: ${data.message}`, 'error');
                     document.getElementById('resultContent').innerHTML = 
                         `<div class="alert-error">Error: ${data.message}</div>`;
                     showAlert('❌ ' + data.message, 'error');
                 }
             })
             .catch(error => {
+                addFlowStep('error', `❌ Network Error: ${error.message}`, 'error');
                 document.getElementById('resultContent').innerHTML = 
                     `<div class="alert-error">Error: ${error.message}</div>`;
                 showAlert('❌ Error: ' + error.message, 'error');
             });
         }
+        
+        function addFlowStep(type, content, status = 'active') {
+            if (!currentQueryFlow) return;
+            
+            const step = {
+                type: type,
+                content: content,
+                status: status,
+                timestamp: new Date()
+            };
+            
+            flowSteps.push(step);
+            currentQueryFlow.steps.push(step);
+            updateFlowDiagram();
+        }
+        
+        function updateFlowDiagram() {
+            const content = document.getElementById('flowDiagramContent');
+            
+            if (flowSteps.length === 0) {
+                content.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 20px;">Query flow will appear here...</div>';
+                return;
+            }
+            
+            let html = '';
+            
+            flowSteps.forEach((step, index) => {
+                let stepClass = 'flow-step';
+                if (step.status === 'completed') stepClass += ' completed';
+                else if (step.status === 'error') stepClass += ' error';
+                else stepClass += ' active';
+                
+                let stepContent = '';
+                
+                // Format based on step type
+                if (step.type === 'query_received') {
+                    stepContent = `<div style="font-weight: bold; color: #2563eb;">${step.content}</div>`;
+                } else if (step.type === 'decision') {
+                    stepContent = `<div class="flow-decision">${step.content}</div>`;
+                } else if (step.type === 'tool_call') {
+                    stepContent = `<div class="flow-tool-call">${step.content}</div>`;
+                } else if (step.type === 'tool_result') {
+                    stepContent = `<div class="flow-result">${step.content}</div>`;
+                } else if (step.type === 'cypher_generated') {
+                    stepContent = `<div style="background: #dbeafe; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.8rem;">${step.content}</div>`;
+                } else {
+                    stepContent = `<div>${step.content}</div>`;
+                }
+                
+                html += `<div class="${stepClass}">${stepContent}</div>`;
+                
+                // Add arrow between steps (except last)
+                if (index < flowSteps.length - 1) {
+                    html += '<div class="flow-arrow">↓</div>';
+                }
+            });
+            
+            content.innerHTML = html;
+            
+            // Auto-scroll to bottom
+            content.scrollTop = content.scrollHeight;
+        }
+        
+        function clearFlowDiagram() {
+            flowSteps = [];
+            currentQueryFlow = null;
+            updateFlowDiagram();
+        }
 
         function updateHistory() {
+            // Update sidebar history
+            updateSidebarHistory();
+            
             if (queryHistory.length === 0) return;
             
             const historyDiv = document.getElementById('history');
@@ -1254,6 +1647,83 @@
                     <small>${item.result.substring(0, 100)}...</small>
                 </div>`
             ).join('');
+        }
+        
+        function updateSidebarHistory() {
+            const sidebarHistory = document.getElementById('sidebarHistoryContent');
+            
+            if (queryHistory.length === 0) {
+                sidebarHistory.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 20px; font-size: 0.85rem;">Your query history will appear here...</div>';
+                return;
+            }
+            
+            // Show last 10 queries in sidebar
+            sidebarHistory.innerHTML = queryHistory.slice(0, 10).map((item, index) => {
+                const timestamp = item.timestamp || new Date().toLocaleTimeString();
+                return `
+                    <div class="history-query-item" onclick="loadHistoryQuery(${index})" title="Click to use this query again">
+                        <div class="query-text">${item.query}</div>
+                        <div class="query-meta">
+                            <span class="query-mode">${item.mode}</span>
+                            <span>${timestamp}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function loadHistoryQuery(index) {
+            if (queryHistory[index]) {
+                const item = queryHistory[index];
+                document.getElementById('queryInput').value = item.query;
+                
+                // Select the mode
+                const modeInputs = document.querySelectorAll('input[name="mode"]');
+                modeInputs.forEach(input => {
+                    if (input.value === item.mode) {
+                        input.checked = true;
+                    }
+                });
+                
+                // Focus on input for immediate editing/submission
+                document.getElementById('queryInput').focus();
+            }
+        }
+        
+        function showQuerySuggestions() {
+            const input = document.getElementById('queryInput');
+            const suggestionsDiv = document.getElementById('querySuggestions');
+            const query = input.value.toLowerCase().trim();
+            
+            if (!query || queryHistory.length === 0) {
+                suggestionsDiv.style.display = 'none';
+                return;
+            }
+            
+            // Find matching queries from history
+            const matches = queryHistory
+                .filter(item => item.query.toLowerCase().includes(query))
+                .slice(0, 5);
+            
+            if (matches.length === 0) {
+                suggestionsDiv.style.display = 'none';
+                return;
+            }
+            
+            suggestionsDiv.innerHTML = matches.map((item) => `
+                <div class="suggestion-item" onclick="selectSuggestion('${item.query.replace(/'/g, "\\'")}')">
+                    <div class="suggestion-text">${item.query}</div>
+                    <div class="suggestion-count">Used before (${item.mode})</div>
+                </div>
+            `).join('');
+            
+            suggestionsDiv.style.display = 'block';
+        }
+        
+        function selectSuggestion(query) {
+            document.getElementById('queryInput').value = query;
+            document.getElementById('querySuggestions').style.display = 'none';
+            document.getElementById('queryInput').focus();
         }
 
         // Format markdown table to beautiful HTML table
@@ -1444,10 +1914,30 @@
             return formattedText || text;
         }
 
-        // Allow Enter key to submit
-        document.getElementById('queryInput').addEventListener('keypress', function(e) {
+        // Query input handlers
+        const queryInput = document.getElementById('queryInput');
+        
+        queryInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
+                document.getElementById('querySuggestions').style.display = 'none';
                 submitQuery();
+            }
+        });
+        
+        queryInput.addEventListener('input', function() {
+            showQuerySuggestions();
+        });
+        
+        queryInput.addEventListener('blur', function() {
+            // Hide suggestions after a short delay (to allow click)
+            setTimeout(() => {
+                document.getElementById('querySuggestions').style.display = 'none';
+            }, 200);
+        });
+        
+        queryInput.addEventListener('focus', function() {
+            if (queryInput.value.trim()) {
+                showQuerySuggestions();
             }
         });
 
