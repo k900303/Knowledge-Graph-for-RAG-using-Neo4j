@@ -881,10 +881,13 @@
                 </div>
 
                 <div class="query-history-sidebar">
-                    <h3>📜 Recent Queries</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3>📜 Recent Queries</h3>
+                        <button onclick="clearQueryHistory()" style="background: #ef4444; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;" title="Clear all saved queries">Clear</button>
+                    </div>
                     <div id="sidebarHistoryContent">
                         <div style="color: #9ca3af; text-align: center; padding: 20px; font-size: 0.85rem;">
-                            Your query history will appear here...
+                            Loading query history...
                         </div>
                     </div>
                 </div>
@@ -954,13 +957,38 @@
     </div>
 
     <script>
-        let queryHistory = [];
+        // Initialize query history from localStorage
+        let queryHistory = loadQueryHistoryFromStorage();
         let isInitialized = false;
         let eventSource = null;
         let logEntries = [];
         let toolCallLogs = [];
         let flowSteps = [];
         let currentQueryFlow = null;
+        
+        // Load query history from localStorage
+        function loadQueryHistoryFromStorage() {
+            try {
+                const saved = localStorage.getItem('peersQueryHistory');
+                if (saved) {
+                    return JSON.parse(saved);
+                }
+            } catch (e) {
+                console.error('Error loading query history from storage:', e);
+            }
+            return [];
+        }
+        
+        // Save query history to localStorage
+        function saveQueryHistoryToStorage() {
+            try {
+                // Keep only last 50 queries to avoid storage bloat
+                const toSave = queryHistory.slice(0, 50);
+                localStorage.setItem('peersQueryHistory', JSON.stringify(toSave));
+            } catch (e) {
+                console.error('Error saving query history to storage:', e);
+            }
+        }
 
         function showAlert(message, type = 'info') {
             const alertsDiv = document.getElementById('alerts');
@@ -1515,30 +1543,61 @@
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
-                    // Check if result contains markdown table format
-                    let formattedResult = data.result;
-                    if (data.result.includes('|') && data.result.includes('---')) {
-                        // Convert markdown table to HTML table
-                        formattedResult = formatMarkdownTable(data.result);
+                    // Check if result is empty (no data found)
+                    if (!data.result || data.result.trim() === '') {
+                        // No data found - show clear message
+                        addFlowStep('no_data', `⚠️ No Data Found\nNo matching records in database`, 'error');
+                        addFlowStep('query_complete', `ℹ️ Query Completed\nNo data to display`, 'completed');
+                        
+                        document.getElementById('resultContent').innerHTML = 
+                            `<div><strong>Query:</strong> ${data.query}</div>
+                             <div style="color: #6b7280; margin: 10px 0;"><strong>Mode:</strong> ${data.mode}</div>
+                             <hr style="margin: 15px 0;">
+                             <div class="result-content" style="color: #9ca3af; font-style: italic; padding: 20px; text-align: center;">
+                                 No data found in database for this query.<br>
+                                 <small style="color: #6b7280;">Only actual database results are shown - no fabricated data.</small>
+                             </div>`;
+                    } else {
+                        // Data found - format and display
+                        let formattedResult = data.result;
+                        if (data.result.includes('|') && data.result.includes('---')) {
+                            // Convert markdown table to HTML table
+                            formattedResult = formatMarkdownTable(data.result);
+                        }
+                        
+                        // Update flow diagram with success
+                        addFlowStep('result_generated', `✅ Result Generated\n${data.result.substring(0, 100)}${data.result.length > 100 ? '...' : ''}`, 'completed');
+                        addFlowStep('query_complete', `🎉 Query Completed Successfully\nDuration: ${((new Date() - currentQueryFlow.startTime) / 1000).toFixed(2)}s`, 'completed');
+                        
+                        document.getElementById('resultContent').innerHTML = 
+                            `<div><strong>Query:</strong> ${data.query}</div>
+                             <div style="color: #6b7280; margin: 10px 0;"><strong>Mode:</strong> ${data.mode}</div>
+                             <hr style="margin: 15px 0;">
+                             <div class="result-content">${formattedResult}</div>`;
                     }
                     
-                    // Update flow diagram with success
-                    addFlowStep('result_generated', `✅ Result Generated\n${data.result.substring(0, 100)}${data.result.length > 100 ? '...' : ''}`, 'completed');
-                    addFlowStep('query_complete', `🎉 Query Completed Successfully\nDuration: ${((new Date() - currentQueryFlow.startTime) / 1000).toFixed(2)}s`, 'completed');
-                    
-                    document.getElementById('resultContent').innerHTML = 
-                        `<div><strong>Query:</strong> ${data.query}</div>
-                         <div style="color: #6b7280; margin: 10px 0;"><strong>Mode:</strong> ${data.mode}</div>
-                         <hr style="margin: 15px 0;">
-                         <div class="result-content">${formattedResult}</div>`;
-                    
                     // Add to history
-                    queryHistory.unshift({
+                    const historyEntry = {
                         query: data.query,
                         mode: data.mode,
                         result: data.result,
-                        timestamp: new Date().toLocaleTimeString()
-                    });
+                        timestamp: new Date().toLocaleTimeString(),
+                        date: new Date().toISOString()
+                    };
+                    queryHistory.unshift(historyEntry);
+                    
+                    // Remove duplicates (same query, same mode)
+                    queryHistory = queryHistory.filter((item, index, self) =>
+                        index === self.findIndex(t => t.query === item.query && t.mode === item.mode)
+                    );
+                    
+                    // Limit to 50 entries
+                    if (queryHistory.length > 50) {
+                        queryHistory = queryHistory.slice(0, 50);
+                    }
+                    
+                    // Save to localStorage
+                    saveQueryHistoryToStorage();
                     updateHistory();
                     
                     // Load Cypher history if GraphRAG was used
@@ -1652,20 +1711,29 @@
         function updateSidebarHistory() {
             const sidebarHistory = document.getElementById('sidebarHistoryContent');
             
+            // Load from storage if empty
             if (queryHistory.length === 0) {
-                sidebarHistory.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 20px; font-size: 0.85rem;">Your query history will appear here...</div>';
+                queryHistory = loadQueryHistoryFromStorage();
+            }
+            
+            if (queryHistory.length === 0) {
+                sidebarHistory.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 20px; font-size: 0.85rem;">Your query history will appear here...<br><small>Queries are saved automatically</small></div>';
                 return;
             }
             
-            // Show last 10 queries in sidebar
-            sidebarHistory.innerHTML = queryHistory.slice(0, 10).map((item, index) => {
+            // Show last 15 queries in sidebar (increased from 10)
+            sidebarHistory.innerHTML = queryHistory.slice(0, 15).map((item, index) => {
                 const timestamp = item.timestamp || new Date().toLocaleTimeString();
+                const date = item.date ? new Date(item.date) : new Date();
+                const dateStr = date.toLocaleDateString() === new Date().toLocaleDateString() 
+                    ? 'Today ' + timestamp 
+                    : date.toLocaleDateString() + ' ' + timestamp;
                 return `
-                    <div class="history-query-item" onclick="loadHistoryQuery(${index})" title="Click to use this query again">
-                        <div class="query-text">${item.query}</div>
+                    <div class="history-query-item" onclick="loadHistoryQuery(${index})" title="Click to load this query">
+                        <div class="query-text">${escapeHtml(item.query)}</div>
                         <div class="query-meta">
                             <span class="query-mode">${item.mode}</span>
-                            <span>${timestamp}</span>
+                            <span style="font-size: 0.7rem;">${dateStr}</span>
                         </div>
                     </div>
                 `;
@@ -1695,35 +1763,92 @@
             const suggestionsDiv = document.getElementById('querySuggestions');
             const query = input.value.toLowerCase().trim();
             
-            if (!query || queryHistory.length === 0) {
+            // Show suggestions even if input is empty (show recent queries)
+            if (queryHistory.length === 0) {
                 suggestionsDiv.style.display = 'none';
                 return;
             }
             
-            // Find matching queries from history
-            const matches = queryHistory
-                .filter(item => item.query.toLowerCase().includes(query))
-                .slice(0, 5);
+            let matches = [];
+            
+            if (!query) {
+                // Show most recent queries when input is empty
+                matches = queryHistory.slice(0, 5).map(item => ({...item, score: 0}));
+            } else {
+                // Find matching queries from history (prioritize exact matches, then contains)
+                matches = queryHistory
+                    .map(item => {
+                        const itemQuery = item.query.toLowerCase();
+                        let score = 0;
+                        
+                        if (itemQuery === query) {
+                            score = 100; // Exact match
+                        } else if (itemQuery.startsWith(query)) {
+                            score = 50; // Starts with
+                        } else if (itemQuery.includes(query)) {
+                            score = 25; // Contains
+                        }
+                        
+                        return score > 0 ? {...item, score} : null;
+                    })
+                    .filter(item => item !== null)
+                    .sort((a, b) => b.score - a.score)
+                    .slice(0, 5);
+            }
             
             if (matches.length === 0) {
                 suggestionsDiv.style.display = 'none';
                 return;
             }
             
-            suggestionsDiv.innerHTML = matches.map((item) => `
-                <div class="suggestion-item" onclick="selectSuggestion('${item.query.replace(/'/g, "\\'")}')">
-                    <div class="suggestion-text">${item.query}</div>
-                    <div class="suggestion-count">Used before (${item.mode})</div>
-                </div>
-            `).join('');
+            suggestionsDiv.innerHTML = matches.map((item) => {
+                const date = new Date(item.date || item.timestamp);
+                const dateStr = date.toLocaleDateString() === new Date().toLocaleDateString() 
+                    ? 'Today' 
+                    : date.toLocaleDateString();
+                return `
+                    <div class="suggestion-item" onclick="selectSuggestion('${item.query.replace(/'/g, "\\'")}', '${item.mode}')">
+                        <div class="suggestion-text">${escapeHtml(item.query)}</div>
+                        <div class="suggestion-count">
+                            <span style="background: ${item.mode === 'GraphRAG' ? '#2563eb' : '#10b981'}; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.7rem; margin-right: 6px;">${item.mode}</span>
+                            ${dateStr}
+                        </div>
+                    </div>
+                `;
+            }).join('');
             
             suggestionsDiv.style.display = 'block';
         }
         
-        function selectSuggestion(query) {
+        function selectSuggestion(query, mode) {
             document.getElementById('queryInput').value = query;
             document.getElementById('querySuggestions').style.display = 'none';
+            
+            // Set the mode if provided
+            if (mode) {
+                const modeInputs = document.querySelectorAll('input[name="mode"]');
+                modeInputs.forEach(input => {
+                    if (input.value === mode) {
+                        input.checked = true;
+                    }
+                });
+            }
+            
             document.getElementById('queryInput').focus();
+            
+            // Optionally auto-submit (commented out - uncomment if desired)
+            // submitQuery();
+        }
+        
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
         }
 
         // Format markdown table to beautiful HTML table
@@ -1914,7 +2039,7 @@
             return formattedText || text;
         }
 
-        // Query input handlers
+        // Query input handlers with enhanced autocomplete
         const queryInput = document.getElementById('queryInput');
         
         queryInput.addEventListener('keypress', function(e) {
@@ -1928,6 +2053,11 @@
             showQuerySuggestions();
         });
         
+        queryInput.addEventListener('focus', function() {
+            // Always show suggestions on focus (even if empty)
+            showQuerySuggestions();
+        });
+        
         queryInput.addEventListener('blur', function() {
             // Hide suggestions after a short delay (to allow click)
             setTimeout(() => {
@@ -1935,17 +2065,58 @@
             }, 200);
         });
         
-        queryInput.addEventListener('focus', function() {
-            if (queryInput.value.trim()) {
-                showQuerySuggestions();
+        // Handle arrow keys for suggestion navigation
+        let selectedSuggestionIndex = -1;
+        queryInput.addEventListener('keydown', function(e) {
+            const suggestionsDiv = document.getElementById('querySuggestions');
+            const suggestions = suggestionsDiv.querySelectorAll('.suggestion-item');
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedSuggestionIndex = Math.min(selectedSuggestionIndex + 1, suggestions.length - 1);
+                updateSuggestionSelection(suggestions);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedSuggestionIndex = Math.max(selectedSuggestionIndex - 1, -1);
+                updateSuggestionSelection(suggestions);
+            } else if (e.key === 'Enter' && selectedSuggestionIndex >= 0 && suggestions.length > 0) {
+                e.preventDefault();
+                suggestions[selectedSuggestionIndex].click();
+            } else if (e.key === 'Escape') {
+                suggestionsDiv.style.display = 'none';
+                selectedSuggestionIndex = -1;
             }
         });
+        
+        function updateSuggestionSelection(suggestions) {
+            suggestions.forEach((item, index) => {
+                if (index === selectedSuggestionIndex) {
+                    item.style.background = '#2563eb';
+                    item.style.color = 'white';
+                } else {
+                    item.style.background = '';
+                    item.style.color = '';
+                }
+            });
+        }
 
+        // Clear query history function
+        function clearQueryHistory() {
+            if (confirm('Are you sure you want to clear all saved query history?')) {
+                queryHistory = [];
+                localStorage.removeItem('peersQueryHistory');
+                updateSidebarHistory();
+                showAlert('✅ Query history cleared', 'success');
+            }
+        }
+        
         // Connect to log stream and auto-initialize RAG on page load
         window.addEventListener('load', function() {
             connectLogStream();
             // Auto-initialize RAG systems on page load
             initRAG(true); // silent = true to avoid showing alerts on auto-init
+            // Load and display query history from storage
+            updateSidebarHistory();
         });
     </script>
 </body>

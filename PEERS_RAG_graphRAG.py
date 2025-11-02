@@ -1207,19 +1207,26 @@ RETURN c.company_name, c.cid, s.name as sector, country.name as country, c.marke
     
     def synthesize_answer(self, question: str, structured_results: list, chunks_text: str) -> str:
         """
-        Combine structured data and chunks with LLM to generate final answer (Step 4 of proper GraphRAG flow)
+        Format structured data ONLY - no LLM hallucinations.
+        Only shows actual database results. Returns empty string if no data.
         
         Args:
             question: Original question
             structured_results: Results from Cypher query
-            chunks_text: Retrieved text chunks
+            chunks_text: Retrieved text chunks (not used - only structured data shown)
         
         Returns:
-            Final synthesized answer
+            Formatted answer with ONLY database data, or empty string if no data
         """
         try:
             if self.log_manager:
-                self.log_manager.add_info_log(f'Step 4: Synthesizing final answer with LLM')
+                self.log_manager.add_info_log(f'Step 4: Formatting results (NO LLM - data only)')
+            
+            # CRITICAL: If no results, return empty string - no hallucinations
+            if not structured_results or len(structured_results) == 0:
+                if self.log_manager:
+                    self.log_manager.add_info_log('No data found - returning empty response (no hallucinations)')
+                return ""  # Return empty - no LLM call, no fabricated data
             
             # Detect query type based on result structure
             is_company_details_query = False
@@ -1381,130 +1388,24 @@ RETURN c.company_name, c.cid, s.name as sector, country.name as country, c.marke
                             structured_data += f"  {key}: {value}\n"
                         structured_data += "\n"
             else:
-                structured_data = "No structured data records found."
+                # No results - return empty string (no hallucinations)
+                if self.log_manager:
+                    self.log_manager.add_info_log('No structured data to format - returning empty response')
+                return ""
             
-            # Create synthesis prompt
-            # Check if we actually have results
-            has_results = len(structured_results) > 0 and structured_data.strip() != ""
-            
-            # Enhanced prompt based on whether we have results
-            if len(structured_results) > 0:
-                results_indicator = f"⚠️ CRITICAL: {len(structured_results)} DATA RECORDS FOUND - YOU MUST PRESENT THIS DATA"
-            else:
-                results_indicator = "No data records found in database."
-            
-            # Create synthesis prompt based on query type
-            if is_company_details_query:
-                synthesis_prompt = f"""
-Based ONLY on the structured data provided below, answer the user's question about company details.
-
-Question: {question}
-
-{results_indicator}
-
-Structured Data:
-{structured_data if structured_data.strip() else "No structured data records found."}
-
-CRITICAL RULES - FOLLOW EXACTLY:
-1. If you see "Found X company record(s)" above, DATA EXISTS - present it immediately
-2. NEVER say "No data found", "no information", "no specific data" if structured data shows company records
-3. Format the answer as a clear, readable company information summary
-4. Use the EXACT company name from the data - do not modify or abbreviate it
-5. Present company details in this format:
-
-## Company Details: [Company Name]
-
-**Basic Information:**
-- Company ID: [cid]
-- Country: [country] ([country_code])
-- Sector: [sector]
-- Industry: [industry]
-- Market Cap: [market_cap] (if available)
-
-**Description:**
-[description if available]
-
-6. If multiple companies match, create separate sections for each
-7. Use the EXACT values from structured data - do not make up information
-8. If market cap is available, format it with commas (e.g., 1,234,567,890)
-9. If description is too long, summarize it but keep key information
-
-Example format:
-## Company Details: Kajaria Ceramics
-
-**Basic Information:**
-- Company ID: 18315
-- Country: India (IN)
-- Sector: Materials
-- Industry: Building Products
-- Market Cap: 45,678,900,000
-
-**Description:**
-Kajaria Ceramics is a leading manufacturer of ceramic tiles...
-
-Answer (provide complete company details from the data):"""
-            else:
-                synthesis_prompt = f"""
-Based ONLY on the structured data provided below, answer the user's question.
-
-Question: {question}
-
-{results_indicator}
-
-Structured Data:
-{structured_data if structured_data.strip() else "No structured data records found."}
-
-CRITICAL RULES - FOLLOW EXACTLY:
-1. If you see "{len(structured_results)} records found" or "Found X data records" above, DATA EXISTS - present it immediately
-2. NEVER say "No data found", "no information", "no specific data", "Unfortunately there is no data" if structured data shows records
-3. Format the answer as a structured table using markdown format with pipe delimiters
-4. If multiple records exist, group by parameter and show each period's data in a row
-5. Round currency values to 2 decimal places for readability
-6. Use this EXACT format for parameter queries:
-
-## [Parameter Name] for [Company Name] in [Period/Range]
-
-| Period | Value | Currency | YoY Growth |
-|--------|-------|----------|------------|
-| [period1] | [value1] | [currency1] | [growth1]% |
-| [period2] | [value2] | [currency2] | [growth2]% |
-
-If multiple similar parameter names exist (e.g., "Accounts receivable" and "Accounts receivable, Average"), use this format instead:
-
-| Parameter Name | Period | Value | Currency | YoY Growth |
-|---------------|--------|-------|----------|------------|
-| Accounts receivable | [period1] | [value1] | [currency1] | [growth1]% |
-| Accounts receivable, Average | [period1] | [value2] | [currency2] | [growth2]% |
-
-IMPORTANT: Always include "Period" as a column. If multiple similar parameter names exist, include "Parameter Name" as the FIRST column. Each row must have data in ALL columns matching the header structure. Ensure data alignment: Period column should ONLY contain periods (like "2QFY-2025"), Value column should ONLY contain numeric values, Currency column should ONLY contain currency codes (like "INR"), and YoY Growth should ONLY contain percentages.
-
-7. If multiple parameters are requested or similar parameter names exist (e.g., "Accounts receivable" and "Accounts receivable, Average"), create separate rows or separate tables showing BOTH parameter names and their distinct values
-8. Sort periods chronologically when possible
-9. Use actual numbers from the structured data - do not generalize
-10. If {len(structured_results)} records are shown above, create tables with ALL that data
-11. IMPORTANT: Do NOT combine or deduplicate similar parameter names - if "Accounts receivable" and "Accounts receivable, Average" both exist, show them as separate rows with their respective values
-12. Use the EXACT company name from the data - do not use "Unknown" or make up names
-
-Example format:
-## Accounts receivable for Kajaria Ceramics for FY-2025
-
-| Period | Value | Currency | YoY Growth |
-|--------|-------|----------|------------|
-| 1HFY-2025 | 6,461,000,000.00 | INR | 16.12% |
-| 2QFY-2025 | 6,461,000,000.00 | INR | 0.00% |
-| FY-2025 | 5,701,800,000.00 | INR | -7.95% |
-
-Answer (create markdown table format if data exists, otherwise say data not found):"""
-            
-            llm = ChatOpenAI(temperature=0)
-            response = llm.invoke(synthesis_prompt)
-            
-            final_answer = response.content.strip()
-            
+            # CRITICAL: Return ONLY the formatted structured data - NO LLM CALL
+            # This ensures zero hallucinations - only actual database data is shown
             if self.log_manager:
-                self.log_manager.add_info_log(f'Final answer synthesized successfully, length: {len(final_answer)}')
+                self.log_manager.add_info_log(f'Returning formatted data ONLY (no LLM synthesis - prevents hallucinations)')
             
-            return final_answer
+            # Validate that structured_data is not empty
+            if not structured_data or not structured_data.strip():
+                if self.log_manager:
+                    self.log_manager.add_info_log('Formatted data is empty - returning empty response')
+                return ""
+            
+            # Return the formatted structured data directly
+            return structured_data.strip()
             
         except Exception as e:
             if self.log_manager:
