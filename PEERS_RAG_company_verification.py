@@ -283,13 +283,22 @@ class CompanyVerificationTool:
 
 class CompanyNameExtractor:
     """
-    Utility class to extract company names from user queries
+    Utility class to extract company names from user queries using regex patterns.
+    
+    NOTE: This is a FALLBACK method. The primary method is LLM-powered extraction via
+    CompanyNameExtractionTool which is more scalable and robust. This regex-based approach
+    is kept only for offline scenarios or when LLM extraction fails.
+    
+    For new implementations, prefer using the extract_company_name tool from ToolRegistry.
     """
     
     @staticmethod
     def extract_from_query(question: str) -> Optional[str]:
         """
-        Extract company name from user query using pattern matching
+        Extract company name from user query using pattern matching (FALLBACK METHOD).
+        
+        NOTE: This uses hardcoded regex patterns which are NOT scalable. For production,
+        use the LLM-powered CompanyNameExtractionTool instead.
         
         Args:
             question: User's natural language query
@@ -317,10 +326,44 @@ class CompanyNameExtractor:
                 if len(company_name) > 2:
                     return company_name
         
-        # If not found, try simple word extraction (look for capitalized words)
+        # NEW: Pattern for parameter queries like "ebitda margin of kajaria", "revenue of company", etc.
+        # Match: [parameter words] + "of" + [company name]
+        parameter_patterns = [
+            r'(?:revenue|margin|profit|ebitda|ebit|sales|earnings|production|volume|accounts|receivable|payable)\s+(?:of|for)\s+([a-zA-Z][\w\s]+?)(?:\s+q\d|fy|\d{4}|company|$)',
+            r'(?:revenue|margin|profit|ebitda|ebit|sales|earnings|production|volume|accounts|receivable|payable)\s+(?:of|for)\s+([a-zA-Z][\w\s]+?)(?=\s|$)',
+        ]
+        
+        for pattern in parameter_patterns:
+            match = re.search(pattern, question_lower, re.IGNORECASE)
+            if match:
+                company_name = match.group(1).strip()
+                # Remove period indicators (q1, q2, q3, q4, fy2024, etc.)
+                company_name = re.sub(r'\s*(q\d|fy-?\d{4}|\d{4}|\d{1,2}qfy|quarter\s+\d).*$', '', company_name, flags=re.IGNORECASE)
+                company_name = company_name.strip()
+                # Remove common stop words
+                company_name = re.sub(r'\s+(company|the|of|for|about)$', '', company_name, flags=re.IGNORECASE)
+                if len(company_name) > 2:
+                    return company_name
+        
+        # If not found, try simple word extraction (look for capitalized words OR lowercase words after "of")
         words = question.split()
         is_details_query = any(word in question_lower for word in ['details', 'detail', 'information', 'info', 'about'])
         
+        # Check for words after "of" - often company names appear here
+        for i, word in enumerate(words):
+            if i > 0 and words[i-1].lower() == 'of':
+                # Word after "of" could be company name (even if lowercase)
+                if word.isalpha() and len(word) > 3:
+                    # Take up to 2 words after "of" as potential company name
+                    potential_name = word
+                    if i + 1 < len(words) and words[i+1].isalpha() and len(words[i+1]) > 2:
+                        # Check if next word is not a period indicator
+                        next_word_lower = words[i+1].lower()
+                        if not (next_word_lower.startswith('q') or next_word_lower.startswith('fy') or next_word_lower.isdigit()):
+                            potential_name = f"{word} {words[i+1]}"
+                    return potential_name
+        
+        # Original capitalized word extraction (fallback)
         for i, word in enumerate(words):
             if word.isalpha() and len(word) > 3 and word[0].isupper():
                 # Check if this looks like a company name
@@ -390,7 +433,8 @@ class CompanyQueryBuilder:
             where_clause += f" AND ({param_conditions})"
         
         if period and period != 'latest':
-            where_clause += f" AND pr.period CONTAINS '{period}'"
+            # ✅ FIXED: Use exact match for specific periods (not CONTAINS)
+            where_clause += f" AND pr.period = '{period}'"
         
         query = f"""MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
                     WHERE {where_clause}

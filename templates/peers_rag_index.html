@@ -382,95 +382,280 @@
             margin-bottom: 15px;
         }
 
+        /* Professional Financial Data Styling */
         .result-content {
-            white-space: pre-wrap;
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Inter', 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.7;
             color: #1f2937;
-            line-height: 1.8;
+        }
+        
+        .result-content p {
+            margin: 16px 0;
+            line-height: 1.7;
+            color: #374151;
         }
 
-        /* Beautiful table styling for parameter results */
+        /* Summary Card Styling */
+        .result-content .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px;
+            border-radius: 12px;
+            margin: 24px 0;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .result-content .summary-card h3 {
+            color: white;
+            margin: 0 0 16px 0;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .result-content .summary-card ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .result-content .summary-card li {
+            padding: 8px 0;
+            font-size: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .result-content .summary-card li:last-child {
+            border-bottom: none;
+        }
+
+        .result-content .summary-card strong {
+            font-weight: 600;
+            opacity: 0.95;
+        }
+
+        /* Headers */
+        .result-content h1 {
+            color: #111827;
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 32px 0 24px 0;
+            padding-bottom: 12px;
+            border-bottom: 3px solid #2563eb;
+            letter-spacing: -0.02em;
+        }
+
+        .result-content h2 {
+            color: #111827;
+            font-size: 1.75rem;
+            font-weight: 600;
+            margin: 32px 0 20px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #E5E7EB;
+            letter-spacing: -0.01em;
+        }
+
+        .result-content h3 {
+            color: #111827;
+            font-size: 1.35rem;
+            font-weight: 600;
+            margin: 28px 0 16px 0;
+            padding: 12px 16px;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border-left: 4px solid #2563eb;
+            border-radius: 6px;
+            letter-spacing: -0.01em;
+        }
+
+        /* Professional Table Styling for Financial Data */
         .result-content table {
             width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin: 24px 0;
             background: white;
-            border-radius: 8px;
+            border-radius: 12px;
             overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07), 0 1px 3px rgba(0, 0, 0, 0.06);
+            border: 1px solid #e5e7eb;
         }
 
         .result-content table thead {
-            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
             color: white;
         }
 
         .result-content table th {
-            padding: 16px;
+            padding: 18px 20px;
             text-align: left;
             font-weight: 600;
-            font-size: 0.95rem;
+            font-size: 0.875rem;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.05em;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .result-content table th:first-child {
+            padding-left: 24px;
+        }
+
+        .result-content table th:last-child {
+            padding-right: 24px;
         }
 
         .result-content table td {
-            padding: 14px 16px;
-            border-bottom: 1px solid #E5E7EB;
+            padding: 16px 20px;
+            border-bottom: 1px solid #f3f4f6;
             color: #374151;
             font-size: 0.95rem;
+            vertical-align: middle;
+        }
+
+        .result-content table td:first-child {
+            padding-left: 24px;
+        }
+
+        .result-content table td:last-child {
+            padding-right: 24px;
         }
 
         .result-content table tbody tr:last-child td {
             border-bottom: none;
         }
 
+        .result-content table tbody tr {
+            transition: all 0.2s ease;
+        }
+
         .result-content table tbody tr:hover {
-            background-color: #F9FAFB;
-            transition: background-color 0.2s ease;
+            background-color: #f8fafc;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
         }
 
         .result-content table tbody tr:nth-child(even) {
-            background-color: #FAFBFC;
+            background-color: #fafbfc;
         }
 
-        .result-content h2 {
-            color: #111827;
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin: 24px 0 16px 0;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #E5E7EB;
+        .result-content table tbody tr:nth-child(even):hover {
+            background-color: #f1f5f9;
         }
 
+        /* Financial Value Cell - Professional Number Formatting */
         .result-content .value-cell {
-            font-weight: 600;
+            font-weight: 700;
             color: #059669;
-            font-family: 'Courier New', monospace;
+            font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Roboto Mono', monospace;
+            font-size: 1rem;
+            letter-spacing: 0.02em;
         }
 
+        /* Growth Indicators with Icons */
         .result-content .growth-positive {
             color: #059669;
             font-weight: 600;
+            position: relative;
+            padding-left: 20px;
+        }
+
+        .result-content .growth-positive::before {
+            content: '▲';
+            position: absolute;
+            left: 0;
+            font-size: 0.85rem;
         }
 
         .result-content .growth-negative {
             color: #DC2626;
             font-weight: 600;
+            position: relative;
+            padding-left: 20px;
+        }
+
+        .result-content .growth-negative::before {
+            content: '▼';
+            position: absolute;
+            left: 0;
+            font-size: 0.85rem;
         }
 
         .result-content .growth-zero {
             color: #6B7280;
-        }
-
-        .result-content .period-cell {
             font-weight: 500;
-            color: #374151;
         }
 
+        /* Period Cell - Professional Date Formatting */
+        .result-content .period-cell {
+            font-weight: 600;
+            color: #1e40af;
+            font-family: 'SF Mono', 'Monaco', monospace;
+            font-size: 0.95rem;
+            letter-spacing: 0.03em;
+        }
+
+        /* Currency Cell */
         .result-content .currency-cell {
             color: #6B7280;
-            font-size: 0.9rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-family: 'SF Mono', 'Monaco', monospace;
+        }
+
+        /* Highlighted Text */
+        .result-content strong {
+            color: #1f2937;
+            font-weight: 600;
+            background: linear-gradient(120deg, #fef3c7 0%, #fef3c7 100%);
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+
+        .result-content em {
+            color: #4b5563;
+            font-style: italic;
+        }
+
+        /* Lists */
+        .result-content ul, .result-content ol {
+            margin: 16px 0;
+            padding-left: 28px;
+        }
+
+        .result-content li {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
+
+        /* Horizontal Rules */
+        .result-content hr {
+            border: none;
+            border-top: 2px solid #e5e7eb;
+            margin: 32px 0;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .result-content table {
+                font-size: 0.875rem;
+            }
+
+            .result-content table th,
+            .result-content table td {
+                padding: 12px 14px;
+            }
+
+            .result-content h1 {
+                font-size: 1.5rem;
+            }
+
+            .result-content h2 {
+                font-size: 1.35rem;
+            }
+
+            .result-content h3 {
+                font-size: 1.15rem;
+            }
         }
 
         .loading {
@@ -1558,12 +1743,8 @@
                                  <small style="color: #6b7280;">Only actual database results are shown - no fabricated data.</small>
                              </div>`;
                     } else {
-                        // Data found - format and display
-                        let formattedResult = data.result;
-                        if (data.result.includes('|') && data.result.includes('---')) {
-                            // Convert markdown table to HTML table
-                            formattedResult = formatMarkdownTable(data.result);
-                        }
+                        // Data found - format and display (always format as markdown)
+                        let formattedResult = formatMarkdownTable(data.result);
                         
                         // Update flow diagram with success
                         addFlowStep('result_generated', `✅ Result Generated\n${data.result.substring(0, 100)}${data.result.length > 100 ? '...' : ''}`, 'completed');
@@ -1851,15 +2032,15 @@
             return text.replace(/[&<>"']/g, m => map[m]);
         }
 
-        // Format markdown table to beautiful HTML table
+        // Format markdown to beautiful HTML (tables, headers, bold, etc.)
         function formatMarkdownTable(text) {
-            // Check if text contains markdown table
-            if (!text.includes('|') || !text.includes('---')) {
-                return text;
+            // CRITICAL: Preserve original line breaks - don't process if text is empty
+            if (!text || typeof text !== 'string') {
+                return text || '';
             }
-
-            // Split by lines
-            const lines = text.split('\n');
+            
+            // Split by lines - preserve empty lines
+            const lines = text.split(/\r?\n/);
             let inTable = false;
             let tableHtml = '';
             let formattedText = '';
@@ -1867,19 +2048,74 @@
             let columnCount = 0;
 
             for (let i = 0; i < lines.length; i++) {
-                const line = lines[i].trim();
+                let line = lines[i];
+                const originalLine = line; // Keep original for empty line detection
+                line = line.trim(); // Trim for processing but preserve empty lines
                 
-                // Detect markdown headers (##)
-                if (line.startsWith('##')) {
+                // CRITICAL: Close any open table before processing headers
+                if (inTable && (line.startsWith('###') || line.startsWith('##') || line.startsWith('#'))) {
+                    tableHtml += '</tbody></table>';
+                    formattedText += tableHtml + '\n';
+                    tableHtml = '';
+                    inTable = false;
+                    headerCells = [];
+                    columnCount = 0;
+                }
+                
+                // Detect markdown headers (###, ##, #) - Enhanced with proper HTML
+                if (line.startsWith('###')) {
+                    const headerText = line.replace('###', '').trim();
+                    formattedText += `<h3>${headerText}</h3>\n`;
+                    continue;
+                } else if (line.startsWith('##')) {
                     const headerText = line.replace('##', '').trim();
                     formattedText += `<h2>${headerText}</h2>\n`;
+                    continue;
+                } else if (line.startsWith('#')) {
+                    const headerText = line.replace('#', '').trim();
+                    formattedText += `<h1>${headerText}</h1>\n`;
+                    continue;
+                }
+                
+                // Detect markdown bold (**text**)
+                let processedLine = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                
+                // Detect markdown italic (*text*)
+                processedLine = processedLine.replace(/\*(.+?)\*/g, '<em>$1</em>');
+                
+                // Detect markdown lists (- item)
+                if (processedLine.match(/^[-*]\s+/)) {
+                    const listItem = processedLine.replace(/^[-*]\s+/, '');
+                    if (!formattedText.endsWith('<ul>\n')) {
+                        formattedText += '<ul style="margin: 12px 0; padding-left: 24px;">\n';
+                    }
+                    formattedText += `<li style="margin: 4px 0;">${listItem}</li>\n`;
+                    continue;
+                } else if (!line.match(/^[-*]\s+/) && formattedText.endsWith('</li>\n')) {
+                    formattedText += '</ul>\n';
+                }
+                
+                // Detect horizontal rules (---)
+                if (line === '---') {
+                    formattedText += '<hr style="margin: 20px 0; border: none; border-top: 2px solid #E5E7EB;">\n';
                     continue;
                 }
                 
                 // Detect table start (line with | and header separator on next line)
-                if (line.includes('|') && i + 1 < lines.length && lines[i + 1].trim().includes('---')) {
+                // IMPORTANT: Must be a clean table header line (not an H3 or other markdown element)
+                // The separator line should contain only dashes, pipes, colons (for alignment), and spaces
+                const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
+                const isSeparatorLine = nextLine && nextLine.match(/^[\|\s:\-]+$/); // Only pipes, dashes, colons, spaces
+                
+                if (line.includes('|') && 
+                    !line.startsWith('#') &&  // Not a header
+                    !line.startsWith('**') && // Not bold text
+                    !line.startsWith('*') &&  // Not italic/bullet
+                    i + 1 < lines.length && 
+                    isSeparatorLine) {
+                    
                     inTable = true;
-                    tableHtml = '<table><thead><tr>';
+                    tableHtml = '<table class="financial-table"><thead><tr>';
                     
                     // Process header row - preserve all cells properly
                     const headerRow = line.split('|');
@@ -1891,15 +2127,31 @@
                         // Skip leading/trailing empty cells but keep all internal cells
                         if (j === 0 && !cell) continue; // Skip leading empty
                         if (j === headerRow.length - 1 && !cell) continue; // Skip trailing empty
-                        headerCells.push(cell);
+                        // Only add valid header cells (not parameter names or other text)
+                        if (cell && !cell.startsWith('#') && cell !== '') {
+                            // Remove markdown formatting from headers
+                            const cleanCell = cell.replace(/\*\*/g, '').replace(/\*/g, '').trim();
+                            headerCells.push(cleanCell);
+                        }
+                    }
+                    
+                    // Validate we have proper table headers (at least 2 columns)
+                    if (headerCells.length < 2) {
+                        // Not a valid table, reset and continue
+                        inTable = false;
+                        formattedText += processedLine + '\n';
+                        continue;
                     }
                     
                     // Build header with proper columns
                     headerCells.forEach(cell => {
-                        tableHtml += `<th>${cell}</th>`;
+                        tableHtml += `<th>${escapeHtml(cell)}</th>`;
                     });
                     tableHtml += '</tr></thead><tbody>';
                     columnCount = headerCells.length;
+                    
+                    // Debug logging (can be removed in production)
+                    console.log(`Table detected with ${columnCount} columns:`, headerCells);
                     
                     // Skip separator line
                     i++;
@@ -1907,7 +2159,7 @@
                 }
                 
                 // Process table rows
-                if (inTable && line.includes('|')) {
+                if (inTable && line.includes('|') && !line.startsWith('#')) {
                     const rowCells = line.split('|');
                     const processedCells = [];
                     
@@ -1917,29 +2169,44 @@
                         // Skip leading/trailing empty cells but keep all internal cells
                         if (j === 0 && !cell) continue; // Skip leading empty
                         if (j === rowCells.length - 1 && !cell) continue; // Skip trailing empty
-                        processedCells.push(cell);
+                        // Only process valid cells (not headers or other markdown)
+                        if (cell && !cell.startsWith('#')) {
+                            processedCells.push(cell);
+                        }
+                    }
+                    
+                    // Validate we have the right number of cells
+                    if (processedCells.length === 0) {
+                        continue; // Skip empty rows
                     }
                     
                     // Ensure we have the correct number of cells to match headers
                     while (processedCells.length < columnCount) {
-                        processedCells.push('');
+                        processedCells.push('-'); // Use dash for missing cells
                     }
-                    // Trim excess cells if more than expected
+                    // Trim excess cells if more than expected (this is critical!)
                     if (processedCells.length > columnCount) {
+                        // Log if we have extra cells (debugging)
+                        console.warn(`Row has ${processedCells.length} cells but header has ${columnCount}. Trimming excess.`);
                         processedCells.splice(columnCount);
                     }
                     
-                    if (processedCells.length > 0) {
+                    // Only create row if we have valid cells matching header count
+                    if (processedCells.length === columnCount && processedCells.length > 0) {
                         tableHtml += '<tr>';
                         
                         // Process each cell based on header position and content
                         processedCells.forEach((cell, index) => {
-                            if (index >= columnCount) return; // Skip extra cells beyond header
+                            if (index >= columnCount || index >= headerCells.length) {
+                                return; // Safety check
+                            }
                             
-                            const cellContent = cell.trim();
+                            let cellContent = cell.trim();
+                            // Remove markdown formatting from cell content
+                            cellContent = cellContent.replace(/\*\*/g, '').replace(/\*/g, '').trim();
                             const headerName = headerCells[index] ? headerCells[index].toLowerCase() : '';
                             let cellClass = '';
-                            let cellHtml = cellContent;
+                            let cellHtml = escapeHtml(cellContent);
                             
                             // First try to match by header name
                             if (headerName.includes('period')) {
@@ -2008,8 +2275,16 @@
                     continue;
                 }
                 
-                // End of table
+                // End of table - detect when we're no longer in a table
+                // Only end if we hit non-empty content that's not part of the table
                 if (inTable && !line.includes('|')) {
+                    // Empty lines don't end tables (allow spacing within table sections)
+                    if (line.trim() === '') {
+                        // Empty line - continue processing (might add spacing later)
+                        continue;
+                    }
+                    
+                    // Non-empty, non-table content - close the table
                     tableHtml += '</tbody></table>';
                     formattedText += tableHtml + '\n';
                     tableHtml = '';
@@ -2017,16 +2292,19 @@
                     headerCells = [];
                     columnCount = 0;
                     
-                    // Add the current line if it's not empty
-                    if (line) {
-                        formattedText += line + '\n';
-                    }
+                    // Process the current line (might be next section like H3, text, etc.)
+                    formattedText += processedLine + '\n';
                     continue;
                 }
                 
-                // Regular text
+                // Regular text (apply markdown formatting) - preserve empty lines
                 if (!inTable) {
-                    formattedText += line + '\n';
+                    // Preserve empty lines for proper markdown rendering
+                    if (originalLine.trim() === '') {
+                        formattedText += '\n';
+                    } else {
+                        formattedText += processedLine + '\n';
+                    }
                 }
             }
             
@@ -2036,7 +2314,76 @@
                 formattedText += tableHtml;
             }
             
-            return formattedText || text;
+            // Close any open list
+            if (formattedText.endsWith('</li>\n')) {
+                formattedText += '</ul>\n';
+            }
+            
+            // Process formatted text to wrap plain text in paragraphs
+            // BUT preserve all HTML elements (tables, headers, lists)
+            let finalText = '';
+            let currentParagraph = '';
+            
+            // Split by newlines but preserve HTML blocks
+            const parts = formattedText.split('\n');
+            
+            for (let i = 0; i < parts.length; i++) {
+                const line = parts[i];
+                
+                // If line is empty, process accumulated paragraph
+                if (line.trim() === '') {
+                    if (currentParagraph.trim()) {
+                        // Wrap accumulated text in paragraph
+                        let para = currentParagraph.trim();
+                        if (para && !para.match(/^<[a-z]/i)) {
+                            // Apply markdown formatting if needed
+                            para = para.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                            para = para.replace(/\*(.+?)\*/g, '<em>$1</em>');
+                            finalText += `<p style="margin: 16px 0; line-height: 1.7; color: #374151;">${para.replace(/\n/g, '<br>')}</p>\n`;
+                        } else {
+                            finalText += para + '\n';
+                        }
+                        currentParagraph = '';
+                    }
+                    finalText += '\n';
+                    continue;
+                }
+                
+                // If line is HTML (table, header, list), output accumulated paragraph first
+                if (line.trim().startsWith('<') && (line.trim().match(/^<(h[1-6]|table|ul|ol|p|div|hr)/i))) {
+                    // Output any accumulated paragraph
+                    if (currentParagraph.trim()) {
+                        let para = currentParagraph.trim();
+                        if (para && !para.match(/^<[a-z]/i)) {
+                            para = para.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                            para = para.replace(/\*(.+?)\*/g, '<em>$1</em>');
+                            finalText += `<p style="margin: 16px 0; line-height: 1.7; color: #374151;">${para.replace(/\n/g, '<br>')}</p>\n`;
+                        } else {
+                            finalText += para + '\n';
+                        }
+                        currentParagraph = '';
+                    }
+                    // Output HTML line as-is
+                    finalText += line + '\n';
+                } else {
+                    // Accumulate plain text
+                    currentParagraph += (currentParagraph ? '\n' : '') + line;
+                }
+            }
+            
+            // Output any remaining paragraph
+            if (currentParagraph.trim()) {
+                let para = currentParagraph.trim();
+                if (para && !para.match(/^<[a-z]/i)) {
+                    para = para.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                    para = para.replace(/\*(.+?)\*/g, '<em>$1</em>');
+                    finalText += `<p style="margin: 16px 0; line-height: 1.7; color: #374151;">${para.replace(/\n/g, '<br>')}</p>\n`;
+                } else {
+                    finalText += para + '\n';
+                }
+            }
+            
+            return finalText || text;
         }
 
         // Query input handlers with enhanced autocomplete

@@ -7,6 +7,7 @@ from typing import List, Dict, Optional, Any
 from abc import ABC, abstractmethod
 from neo4j_env import graph
 from langchain_openai import OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
 import json
 
 
@@ -776,7 +777,10 @@ class CypherGeneratorTool(BaseToolHandler):
                 {order_clause}
                 """.strip()
             else:
-                period_filter = f"AND pr.period CONTAINS '{period}'"
+                # ✅ FIXED: Use EXACT match for specific periods (not CONTAINS)
+                # CONTAINS would incorrectly match periods like "1QFY-2025-extra" if they existed
+                # For specific periods, we want exact matches only
+                period_filter = f"AND pr.period = '{period}'"
                 order_clause = "ORDER BY pr.period, p.parameter_name"
                 cypher = f"""
                 MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
@@ -985,6 +989,281 @@ class CypherGeneratorTool(BaseToolHandler):
         raise NotImplementedError("Use specific execute methods for each query type")
 
 
+class QueryIntentExtractionTool(BaseToolHandler):
+    """
+    Comprehensive LLM-powered tool for extracting ALL query components at once:
+    - Intent (what user wants)
+    - Company name(s)
+    - Parameter names
+    - Period/fiscal year
+    
+    This replaces ALL hardcoded pattern matching with a single, scalable LLM call.
+    """
+    
+    def __init__(self, log_manager=None):
+        super().__init__(log_manager)
+        # Use a lightweight model for extraction (faster and cheaper)
+        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    
+    def get_tool_definition(self) -> Dict:
+        """Return tool definition for OpenAI function calling"""
+        return {
+            "type": "function",
+            "function": {
+                "name": "extract_query_intent",
+                "description": "Extract complete query intent from a natural language question using AI. Extracts: intent type, company name(s), parameter names, and period. Handles all query formats intelligently without hardcoded patterns.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user_query": {
+                            "type": "string",
+                            "description": "The full user query/question to analyze"
+                        }
+                    },
+                    "required": ["user_query"]
+                }
+            }
+        }
+    
+    def execute(self, user_query: str) -> Dict[str, Any]:
+        """Use LLM to intelligently extract all query components"""
+        try:
+            if self.log_manager:
+                self.log_manager.add_info_log(f'Tool: extract_query_intent called for query: "{user_query}"')
+            
+            # Use LLM to extract all components with structured JSON output
+            extraction_prompt = f"""You are a financial query analysis assistant. Extract all components from the user's query.
+
+User Query: "{user_query}"
+
+Extract the following components:
+1. **intent**: The type of query ("parameter_query" | "company_details" | "compare" | "filter" | "unknown")
+2. **company_name**: Company name(s) mentioned (null if none)
+3. **parameters**: List of financial parameters mentioned (e.g., ["EBITDA margin", "Revenue"])
+4. **period**: Fiscal period mentioned (e.g., "1QFY-2026", "FY-2025", "latest", null)
+5. **query_type**: Additional classification ("parameter_with_period" | "parameter_latest" | "company_info" | etc.)
+
+Instructions:
+- Remove financial terms from company names (revenue, margin, profit, etc.)
+- Remove time periods from company names (Q1, Q2, FY2024, etc.)
+- Normalize periods to format: "1QFY-2026", "2QFY-2026", "3QFY-2026", "4QFY-2026", or "FY-2026"
+- For latest queries, use period: "latest"
+- Extract parameter names exactly as they appear in financial contexts
+- Preserve original capitalization for company names
+
+Examples:
+- Query: "ebitda margin of kajaria q1fy2026"
+  → {{"intent": "parameter_query", "company_name": "kajaria", "parameters": ["EBITDA margin"], "period": "1QFY-2026", "query_type": "parameter_with_period"}}
+
+- Query: "show me Apple's revenue"
+  → {{"intent": "parameter_query", "company_name": "Apple", "parameters": ["Revenue"], "period": "latest", "query_type": "parameter_latest"}}
+
+- Query: "what is Reliance Industries profit?"
+  → {{"intent": "parameter_query", "company_name": "Reliance Industries", "parameters": ["Profit"], "period": "latest", "query_type": "parameter_latest"}}
+
+- Query: "Kajaria Ceramics financial data"
+  → {{"intent": "company_details", "company_name": "Kajaria Ceramics", "parameters": [], "period": null, "query_type": "company_info"}}
+
+- Query: "what is the profit margin"
+  → {{"intent": "parameter_query", "company_name": null, "parameters": ["Profit margin"], "period": "latest", "query_type": "parameter_latest"}}
+
+- Query: "revenue and profit for TCS in FY2025"
+  → {{"intent": "parameter_query", "company_name": "TCS", "parameters": ["Revenue", "Profit"], "period": "FY-2025", "query_type": "parameter_with_period"}}
+
+Return your response as a JSON object with this exact format:
+{{"intent": "<intent_type>", "company_name": "<name or null>", "parameters": ["param1", "param2"], "period": "<period or null>", "query_type": "<type>"}}"""
+
+            # Get LLM response
+            response = self.llm.invoke(extraction_prompt)
+            
+            # Extract structured data from LLM response
+            extracted_data = {
+                "intent": "unknown",
+                "company_name": None,
+                "parameters": [],
+                "period": None,
+                "query_type": "unknown"
+            }
+            
+            if hasattr(response, 'content'):
+                extracted_text = response.content.strip()
+                
+                # Try to parse as JSON first (more reliable)
+                try:
+                    # Extract JSON from response (might have markdown code blocks or extra text)
+                    import re
+                    json_match = re.search(r'\{[^{}]*"intent"[^{}]*\}', extracted_text)
+                    if json_match:
+                        json_str = json_match.group(0)
+                        parsed = json.loads(json_str)
+                        
+                        # Validate and extract each field
+                        extracted_data["intent"] = parsed.get("intent", "unknown")
+                        extracted_data["company_name"] = parsed.get("company_name")
+                        extracted_data["parameters"] = parsed.get("parameters", [])
+                        extracted_data["period"] = parsed.get("period")
+                        extracted_data["query_type"] = parsed.get("query_type", "unknown")
+                        
+                        # Handle null/None values
+                        if extracted_data["company_name"] in [None, "null", "None", ""]:
+                            extracted_data["company_name"] = None
+                        if extracted_data["period"] in [None, "null", "None", ""]:
+                            extracted_data["period"] = None
+                        if not isinstance(extracted_data["parameters"], list):
+                            extracted_data["parameters"] = []
+                except Exception as e:
+                    if self.log_manager:
+                        self.log_manager.add_info_log(f'Failed to parse JSON response, using fallback: {str(e)}')
+                    # Could add fallback parsing here if needed
+            
+            result = {
+                **extracted_data,
+                "extracted": extracted_data["company_name"] is not None or len(extracted_data["parameters"]) > 0,
+                "query": user_query
+            }
+            
+            if self.log_manager:
+                self.log_manager.add_info_log(
+                    f'LLM extracted query intent: intent={result["intent"]}, '
+                    f'company={result["company_name"]}, '
+                    f'parameters={result["parameters"]}, '
+                    f'period={result["period"]}'
+                )
+            
+            return result
+            
+        except Exception as e:
+            if self.log_manager:
+                self.log_manager.add_error_log(f'Error in extract_query_intent tool: {str(e)}', e)
+            return {
+                "intent": "unknown",
+                "company_name": None,
+                "parameters": [],
+                "period": None,
+                "query_type": "unknown",
+                "extracted": False,
+                "error": str(e),
+                "query": user_query
+            }
+
+
+# Keep the old tool for backward compatibility, but mark as deprecated
+class CompanyNameExtractionTool(BaseToolHandler):
+    """
+    LLM-powered tool for intelligently extracting company names from natural language queries.
+    This replaces hardcoded pattern matching with AI-powered understanding.
+    """
+    
+    def __init__(self, log_manager=None):
+        super().__init__(log_manager)
+        # Use a lightweight model for extraction (faster and cheaper)
+        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    
+    def get_tool_definition(self) -> Dict:
+        """Return tool definition for OpenAI function calling"""
+        return {
+            "type": "function",
+            "function": {
+                "name": "extract_company_name",
+                "description": "Extract company name(s) from a natural language query using AI. Use this when you need to identify which company the user is asking about. Handles all query formats intelligently without hardcoded patterns.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user_query": {
+                            "type": "string",
+                            "description": "The full user query/question from which to extract the company name"
+                        }
+                    },
+                    "required": ["user_query"]
+                }
+            }
+        }
+    
+    def execute(self, user_query: str) -> Dict[str, Any]:
+        """Use LLM to intelligently extract company name from query"""
+        try:
+            if self.log_manager:
+                self.log_manager.add_info_log(f'Tool: extract_company_name called for query: "{user_query}"')
+            
+            # Use LLM to extract company name with structured JSON output for reliability
+            extraction_prompt = f"""You are a company name extraction assistant. Extract the company name from the user's query.
+
+User Query: "{user_query}"
+
+Instructions:
+1. Identify the company name in the query (if any)
+2. Extract only the company name part, removing:
+   - Financial terms (revenue, margin, profit, ebitda, ebit, sales, earnings, etc.)
+   - Time periods (Q1, Q2, Q3, Q4, FY2024, FY2025, 2024, 2025, etc.)
+   - Question words (what, show, tell, etc.)
+   - Common words (of, the, a, an, etc.)
+3. Preserve the original capitalization/spelling (e.g., "Kajaria", "Bajaj", "Apple Inc")
+4. If no company name is found, set company_name to null
+
+Examples:
+- Query: "ebitda margin of kajaria q1fy2026" → {{"company_name": "kajaria", "confidence": "high"}}
+- Query: "revenue of Apple Inc" → {{"company_name": "Apple Inc", "confidence": "high"}}
+- Query: "show me Reliance Industries" → {{"company_name": "Reliance Industries", "confidence": "high"}}
+- Query: "what is the profit margin" → {{"company_name": null, "confidence": "high"}}
+
+Return your response as a JSON object with this exact format:
+{{"company_name": "<extracted name or null>", "confidence": "high|medium|low"}}"""
+
+            # Get LLM response
+            response = self.llm.invoke(extraction_prompt)
+            
+            # Extract the company name from LLM response (try JSON first, then fallback)
+            company_name = None
+            if hasattr(response, 'content'):
+                extracted_text = response.content.strip()
+                
+                # Try to parse as JSON first (more reliable)
+                try:
+                    # Extract JSON from response (might have markdown code blocks or extra text)
+                    import re
+                    json_match = re.search(r'\{[^{}]*"company_name"[^{}]*\}', extracted_text)
+                    if json_match:
+                        json_str = json_match.group(0)
+                        parsed = json.loads(json_str)
+                        company_name = parsed.get("company_name")
+                        # Handle null/None values
+                        if company_name in [None, "null", "None", ""]:
+                            company_name = None
+                except:
+                    # Fallback: extract text directly
+                    extracted_text = extracted_text.replace("Company:", "").replace("company:", "")
+                    extracted_text = extracted_text.replace("null", "").replace("None", "").replace("none", "")
+                    extracted_text = extracted_text.strip()
+                    
+                    # If response looks valid (not empty and not an explanation)
+                    if extracted_text and len(extracted_text) > 1 and extracted_text.lower() not in ["no", "none", "not found", "null"]:
+                        company_name = extracted_text.strip()
+            
+            result = {
+                "company_name": company_name,
+                "extracted": company_name is not None,
+                "query": user_query
+            }
+            
+            if self.log_manager:
+                if company_name:
+                    self.log_manager.add_info_log(f'LLM extracted company name: "{company_name}" from query: "{user_query}"')
+                else:
+                    self.log_manager.add_info_log(f'LLM found no company name in query: "{user_query}"')
+            
+            return result
+            
+        except Exception as e:
+            if self.log_manager:
+                self.log_manager.add_error_log(f'Error in extract_company_name tool: {str(e)}', e)
+            return {
+                "company_name": None,
+                "extracted": False,
+                "error": str(e),
+                "query": user_query
+            }
+
+
 # Tool Registry - Central registry for all tools
 class ToolRegistry:
     """Central registry for tool discovery and management"""
@@ -996,6 +1275,8 @@ class ToolRegistry:
         # Initialize tools
         self.parameter_search_tool = ParameterSearchTool(log_manager, self.embedding_cache)
         self.company_search_tool = CompanySearchTool(log_manager)
+        self.query_intent_extraction_tool = QueryIntentExtractionTool(log_manager)
+        self.company_name_extraction_tool = CompanyNameExtractionTool(log_manager)  # Deprecated, kept for compatibility
         self.sector_search_tool = SectorSearchTool(log_manager)
         self.industry_search_tool = IndustrySearchTool(log_manager)
         self.geography_search_tool = GeographySearchTool(log_manager)
@@ -1017,6 +1298,8 @@ class ToolRegistry:
         self.tools = {
             "search_parameters": self.parameter_search_tool,
             "search_company": self.company_search_tool,
+            "extract_query_intent": self.query_intent_extraction_tool,  # Primary extraction tool
+            "extract_company_name": self.company_name_extraction_tool,  # Deprecated
             "search_sectors": self.sector_search_tool,
             "search_industries": self.industry_search_tool,
             "search_geography": self.geography_search_tool,
@@ -1038,6 +1321,8 @@ class ToolRegistry:
         # Add search tools
         tools.append(self.parameter_search_tool.get_tool_definition())
         tools.append(self.company_search_tool.get_tool_definition())
+        tools.append(self.query_intent_extraction_tool.get_tool_definition())  # Primary
+        tools.append(self.company_name_extraction_tool.get_tool_definition())  # Deprecated, kept for compatibility
         tools.append(self.sector_search_tool.get_tool_definition())
         tools.append(self.industry_search_tool.get_tool_definition())
         tools.append(self.geography_search_tool.get_tool_definition())
@@ -1071,7 +1356,7 @@ class ToolRegistry:
         elif tool_name == "generate_filter_query":
             return tool.execute_filter_query(**kwargs)
         elif tool_name in ["normalize_period", "search_periods", "search_parameters", "search_company", 
-                           "search_sectors", "search_industries", "search_geography"]:
+                           "extract_query_intent", "extract_company_name", "search_sectors", "search_industries", "search_geography"]:
             return tool.execute(**kwargs)
         else:
             return tool.execute(**kwargs)

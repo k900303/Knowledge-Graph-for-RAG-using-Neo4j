@@ -245,15 +245,11 @@ def api_query():
                     log_manager.add_info_log(f'Cypher query generated successfully')
                     
             except Exception as e:
-                log_manager.add_error_log(f'GraphRAG failed, attempting VectorRAG fallback: {str(e)}', e)
-                try:
-                    log_manager.add_info_log('Attempting VectorRAG fallback...')
-                    result = vector_rag.query(query)
-                    result = f"[GraphRAG Error: {str(e)}] [VectorRAG Fallback: {result}]"
-                    log_manager.add_info_log('VectorRAG fallback completed successfully')
-                except Exception as fallback_error:
-                    log_manager.add_error_log(f'VectorRAG fallback also failed: {str(fallback_error)}', fallback_error)
-                    raise Exception(f"Both GraphRAG and VectorRAG failed. GraphRAG error: {str(e)}, VectorRAG error: {str(fallback_error)}")
+                error_msg = str(e)
+                log_manager.add_error_log(f'GraphRAG failed: {error_msg}', e)
+                # Don't raise - return error message directly so UI can display it
+                # GraphRAG.generate_cypher_query now handles errors gracefully and returns error message
+                result = error_msg
         else:
             log_manager.add_info_log('Performing semantic search in vector store...')
             try:

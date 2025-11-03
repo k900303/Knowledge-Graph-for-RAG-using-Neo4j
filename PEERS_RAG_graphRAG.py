@@ -11,6 +11,7 @@ from PEERS_RAG_tools import ToolRegistry
 from PEERS_RAG_react import ReActEngine, BaseReasoningEngine
 from PEERS_RAG_company_verification import CompanyVerificationTool, CompanyNameExtractor, CompanyQueryBuilder
 from PEERS_RAG_prompts import ModularPromptBuilder, QueryAnalyzer
+from typing import List, Optional
 import textwrap
 import traceback
 import inspect
@@ -267,7 +268,12 @@ class PEERSGraphRAG:
         return text
     
     def _is_parameter_question(self, question: str) -> bool:
-        """Check if the question is asking about parameters"""
+        """
+        Check if the question is asking about parameters (DEPRECATED - use extract_query_intent tool)
+        
+        This method uses hardcoded pattern matching and is NOT scalable.
+        The primary method is LLM-powered extraction via extract_query_intent tool.
+        """
         question_lower = question.lower()
         parameter_indicators = [
             'revenue', 'margin', 'profit', 'ebitda', 'ebit', 'net income', 
@@ -277,6 +283,80 @@ class PEERSGraphRAG:
             'receivable', 'payable', 'accounts', 'asset', 'liability', 'equity'
         ]
         return any(indicator in question_lower for indicator in parameter_indicators)
+    
+    def _extract_parameter_names_from_question(self, question: str) -> List[str]:
+        """
+        Extract parameter names from question (DEPRECATED - use extract_query_intent tool)
+        
+        This method uses hardcoded pattern matching and is NOT scalable.
+        The primary method is LLM-powered extraction via extract_query_intent tool.
+        """
+        question_lower = question.lower()
+        params = []
+        
+        # Check for common parameter patterns
+        if 'ebitda margin' in question_lower:
+            params.append('EBITDA margin')
+        elif 'ebitda' in question_lower:
+            params.append('EBITDA')
+        if 'revenue' in question_lower and 'revenue' not in params:
+            params.append('Revenue')
+        if 'profit' in question_lower and 'margin' not in question_lower:
+            params.append('Profit')
+        if 'net margin' in question_lower:
+            params.append('Net margin')
+        
+        return params if params else None
+    
+    def _extract_period_from_question(self, question: str) -> Optional[str]:
+        """
+        Extract period from question and normalize it (DEPRECATED - use extract_query_intent tool)
+        
+        This method uses hardcoded regex patterns and is NOT scalable.
+        The primary method is LLM-powered extraction via extract_query_intent tool.
+        """
+        question_lower = question.lower()
+        
+        # Try to use period normalization tool if available
+        if self.tool_registry and self.tool_registry.period_normalization_tool:
+            # Try to extract period string from question
+            import re
+            # Match patterns like Q1FY2025, FY2025Q1, 1QFY2025, etc.
+            period_patterns = [
+                r'\b(q[1-4]|quarter\s+[1-4])\s*(?:of\s+)?(?:fy|fiscal\s+year)?\s*(\d{4})',
+                r'\b(fy|fiscal\s+year)\s*(\d{4})\s*(?:q[1-4]|quarter\s+[1-4])',
+                r'\b([1-4]qfy|q[1-4]fy)\s*-?\s*(\d{4})',
+                r'\bfy-?(\d{4})',
+            ]
+            
+            for pattern in period_patterns:
+                match = re.search(pattern, question, re.IGNORECASE)
+                if match:
+                    period_str = match.group(0)
+                    try:
+                        result = self.tool_registry.execute_tool("normalize_period", period_string=period_str)
+                        return result.get('normalized', period_str)
+                    except:
+                        pass
+        
+        # Fallback: simple extraction
+        import re
+        # Q1FY2025, Q1 FY2025, etc.
+        q_match = re.search(r'q([1-4])\s*(?:fy|fiscal)?\s*(\d{4})', question_lower)
+        if q_match:
+            q, year = q_match.groups()
+            return f"{q}QFY-{year}"
+        
+        # FY2025
+        fy_match = re.search(r'fy-?(\d{4})', question_lower)
+        if fy_match:
+            return f"FY-{fy_match.group(1)}"
+        
+        # Latest
+        if 'latest' in question_lower or 'most recent' in question_lower:
+            return 'latest'
+        
+        return None
     
     def _query_has_parameters(self, query: str) -> bool:
         """Check if the Cypher query includes Parameter and PeriodResult nodes"""
@@ -570,24 +650,55 @@ class PEERSGraphRAG:
             is_details_query = any(word in question_lower for word in ['details', 'detail', 'information', 'info', 'about'])
             is_parameter_query = self._is_parameter_question(question)
             
-            # Extract company search term from question using dedicated extractor
-            company_search_term = CompanyNameExtractor.extract_from_query(question)
+            # Use comprehensive LLM-powered extraction tool (extracts intent, company, parameters, period)
+            # This replaces ALL hardcoded pattern matching with a single, scalable LLM call
+            extracted_intent = None
+            company_search_term = None
+            param_names = None
+            period = None
             
-            # Try getting company from schema context as last resort if extractor didn't find anything
-            if not company_search_term:
+            # Try comprehensive LLM extraction first (foolproof approach)
+            if self.tool_registry:
                 try:
-                    if schema_context := self.get_dynamic_schema_context():
-                        companies = schema_context.get('companies', [])
-                        for company in companies[:50]:
-                            company_words = company.lower().split()
-                            for word in company_words:
-                                if len(word) > 3 and word in question_lower:
-                                    company_search_term = company
-                                    break
-                            if company_search_term:
-                                break
-                except:
-                    pass
+                    intent_result = self.tool_registry.execute_tool("extract_query_intent", user_query=question)
+                    if intent_result.get("extracted"):
+                        extracted_intent = intent_result.get("intent", "unknown")
+                        company_search_term = intent_result.get("company_name")
+                        param_names = intent_result.get("parameters", [])
+                        period = intent_result.get("period")
+                        
+                        # Override is_parameter_query and is_details_query with LLM-extracted intent
+                        is_parameter_query = extracted_intent == "parameter_query"
+                        is_details_query = extracted_intent == "company_details"
+                        
+                        if self.log_manager:
+                            self.log_manager.add_info_log(
+                                f'LLM extracted complete intent: intent={extracted_intent}, '
+                                f'company={company_search_term}, params={param_names}, period={period}'
+                            )
+                except Exception as e:
+                    if self.log_manager:
+                        self.log_manager.add_info_log(f'LLM intent extraction failed, using fallback: {str(e)}')
+            
+            # Fallback to individual extraction methods only if comprehensive LLM fails
+            if not extracted_intent or extracted_intent == "unknown":
+                # Fallback to regex-based extraction (for offline scenarios)
+                if not company_search_term:
+                    company_search_term = CompanyNameExtractor.extract_from_query(question)
+                    if company_search_term and self.log_manager:
+                        self.log_manager.add_info_log(f'Regex fallback extracted company: "{company_search_term}"')
+                
+                # Fallback to hardcoded parameter extraction (deprecated)
+                if not param_names:
+                    param_names = self._extract_parameter_names_from_question(question)
+                    if param_names and self.log_manager:
+                        self.log_manager.add_info_log(f'Regex fallback extracted parameters: {param_names}')
+                
+                # Fallback to hardcoded period extraction (deprecated)
+                if not period:
+                    period = self._extract_period_from_question(question) or 'latest'
+                    if self.log_manager:
+                        self.log_manager.add_info_log(f'Regex fallback extracted period: {period}')
             
             # If we found a search term, verify it and build query
             if company_search_term:
@@ -603,19 +714,26 @@ class PEERSGraphRAG:
                 # Verify and get exact company name
                 verification_result = verification_tool.verify_company_name(search_word, limit=5)
                 exact_company_name = verification_result.get("exact_name")
+                matches = verification_result.get("matches", [])
                 
-                # Use exact name if found, otherwise use search term
+                # Use exact name if found, otherwise try first match, otherwise use search term
                 if exact_company_name:
                     company_name_to_use = exact_company_name
                     use_exact_match = True  # Use exact match when we have verified name
                     if self.log_manager:
                         self.log_manager.add_info_log(f'Using verified exact company name: "{company_name_to_use}"')
+                elif matches and len(matches) > 0:
+                    # Use first match even if not exact
+                    company_name_to_use = matches[0].get("company_name", company_search_term)
+                    use_exact_match = True  # Use exact match with the found company name
+                    if self.log_manager:
+                        self.log_manager.add_info_log(f'Using best match from verification: "{company_name_to_use}"')
                 else:
                     # Fallback to using the search term directly (with fuzzy matching)
                     company_name_to_use = company_search_term
                     use_exact_match = False  # Use contains matching as fallback
                     if self.log_manager:
-                        self.log_manager.add_info_log(f'Exact name not found, using search term with fuzzy matching: "{company_name_to_use}"')
+                        self.log_manager.add_info_log(f'No verification matches, using search term with fuzzy matching: "{company_name_to_use}"')
                 
                 # Generate appropriate query using query builder
                 if is_details_query and not is_parameter_query:
@@ -626,10 +744,17 @@ class PEERSGraphRAG:
                     )
                 elif is_parameter_query:
                     # Parameter query with company filter
+                    # Use LLM-extracted parameters and period (already extracted above)
+                    # If not extracted by LLM, fallback to hardcoded methods (handled above)
+                    if not param_names:
+                        param_names = self._extract_parameter_names_from_question(question)
+                    if not period:
+                        period = self._extract_period_from_question(question) or 'latest'
+                    
                     return CompanyQueryBuilder.build_parameter_query(
                         company_name_to_use,
-                        parameter_names=None,
-                        period='latest',
+                        parameter_names=param_names,
+                        period=period,
                         use_exact_match=use_exact_match
                     )
                 else:
@@ -1114,7 +1239,7 @@ class PEERSGraphRAG:
             
             if self.log_manager:
                 self.log_manager.add_info_log(f'Step 2: Executing Cypher query against Neo4j')
-                self.log_manager.add_info_log(f'🔍 Cypher Query: {cypher_query}')
+                self.log_manager.add_info_log(f'Cypher Query: {cypher_query}')
             else:
                 # Fallback: print to console if no log_manager
                 print(f'\n[GraphRAG] Executing Cypher Query:')
@@ -1174,9 +1299,15 @@ class PEERSGraphRAG:
             return results
             
         except Exception as e:
+            error_msg = str(e)
             if self.log_manager:
-                self.log_manager.add_error_log(f'Cypher execution failed: {str(e)}', e)
-            raise
+                self.log_manager.add_error_log(f'Cypher execution failed: {error_msg}', e)
+            
+            # Return empty list instead of raising - let synthesis handle the empty case
+            # This prevents cascading failures
+            if self.log_manager:
+                self.log_manager.add_info_log('Returning empty results due to execution error')
+            return []
     
     def retrieve_relevant_chunks(self, question: str, structured_results: list) -> str:
         """
@@ -1229,6 +1360,39 @@ class PEERSGraphRAG:
                 self.log_manager.add_error_log(f'Chunk retrieval failed: {str(e)}', e)
             return ""
     
+    def _format_value(self, value, currency=None, is_percentage=False):
+        """Format numeric values professionally"""
+        if value is None or value == 'N/A':
+            return 'N/A'
+        
+        if isinstance(value, (int, float)):
+            if is_percentage:
+                return f"{value:.2f}%"
+            
+            # Format large numbers with commas
+            if abs(value) >= 1000000:
+                return f"{value:,.2f}"
+            elif abs(value) >= 1000:
+                return f"{value:,.2f}"
+            else:
+                return f"{value:.2f}"
+        
+        return str(value)
+    
+    def _format_market_cap(self, value):
+        """Format market cap with appropriate units"""
+        if value is None or value == 'N/A' or not isinstance(value, (int, float)):
+            return 'N/A'
+        
+        if abs(value) >= 1_000_000_000_000:  # Trillions
+            return f"${value/1_000_000_000_000:.2f}T"
+        elif abs(value) >= 1_000_000_000:  # Billions
+            return f"${value/1_000_000_000:.2f}B"
+        elif abs(value) >= 1_000_000:  # Millions
+            return f"${value/1_000_000:.2f}M"
+        else:
+            return f"${value:,.2f}"
+    
     def synthesize_answer(self, question: str, structured_results: list, chunks_text: str) -> str:
         """
         Format structured data ONLY - no LLM hallucinations.
@@ -1246,11 +1410,12 @@ class PEERSGraphRAG:
             if self.log_manager:
                 self.log_manager.add_info_log(f'Step 4: Formatting results (NO LLM - data only)')
             
-            # CRITICAL: If no results, return empty string - no hallucinations
+            # CRITICAL: If no results, return informative message - no hallucinations
             if not structured_results or len(structured_results) == 0:
                 if self.log_manager:
-                    self.log_manager.add_info_log('No data found - returning empty response (no hallucinations)')
-                return ""  # Return empty - no LLM call, no fabricated data
+                    self.log_manager.add_info_log('No data found - returning informative empty response (no hallucinations)')
+                # Return informative message instead of empty string
+                return "No data found in database for this query.\n\n**Query:** " + question + "\n\n*Only actual database results are shown - no fabricated data.*"
             
             # Detect query type based on result structure
             is_company_details_query = False
@@ -1298,119 +1463,326 @@ class PEERSGraphRAG:
                             }
                             companies_info.append(company_info)
                     
-                    structured_data = f"Found {len(companies_info)} company record(s):\n\n"
-                    for company in companies_info:
-                        structured_data += f"Company: {company['company_name']}\n"
-                        structured_data += f"  Company ID: {company['cid']}\n"
-                        structured_data += f"  Country: {company['country']} ({company['country_code']})\n"
-                        structured_data += f"  Sector: {company['sector']}\n"
-                        structured_data += f"  Industry: {company['industry']}\n"
+                    # Professional company details formatting
+                    structured_data = f"## Company Information\n\n"
+                    
+                    for idx, company in enumerate(companies_info, 1):
+                        structured_data += f"### {company['company_name']}\n\n"
+                        
+                        # Create a clean info table
+                        info_rows = []
+                        if company['cid'] and company['cid'] != 'N/A':
+                            info_rows.append(("**Company ID**", str(company['cid'])))
+                        if company['country'] and company['country'] != 'N/A':
+                            country_display = f"{company['country']}"
+                            if company['country_code'] and company['country_code'] != 'N/A':
+                                country_display += f" ({company['country_code']})"
+                            info_rows.append(("**Country**", country_display))
+                        if company['sector'] and company['sector'] != 'N/A':
+                            info_rows.append(("**Sector**", company['sector']))
+                        if company['industry'] and company['industry'] != 'N/A':
+                            info_rows.append(("**Industry**", company['industry']))
                         if company['market_cap'] != 'N/A' and company['market_cap']:
-                            formatted_cap = f"{company['market_cap']:,.0f}" if isinstance(company['market_cap'], (int, float)) else str(company['market_cap'])
-                            structured_data += f"  Market Cap: {formatted_cap}\n"
-                        if company['description'] and company['description'] != 'N/A':
-                            desc = str(company['description'])[:200] + "..." if len(str(company['description'])) > 200 else str(company['description'])
-                            structured_data += f"  Description: {desc}\n"
+                            formatted_cap = self._format_market_cap(company['market_cap'])
+                            info_rows.append(("**Market Cap**", formatted_cap))
+                        
+                    # Format as markdown table
+                    if info_rows:
+                        structured_data += "| Property | Value |\n"
+                        structured_data += "|----------|-------|\n"
+                        for prop, val in info_rows:
+                            # Ensure values are properly formatted strings
+                            val_str = str(val) if val and val != 'N/A' and val != 'None' else '-'
+                            structured_data += f"| {prop} | {val_str} |\n"
                         structured_data += "\n"
+                    else:
+                        structured_data += "*No additional information available.*\n\n"
+                    
+                    # Add description if available
+                    if company['description'] and company['description'] != 'N/A':
+                        desc = str(company['description'])
+                        if len(desc) > 300:
+                            desc = desc[:300] + "..."
+                        structured_data += f"**Description:**\n{desc}\n\n"
+                    
+                    # Add separator between multiple companies
+                    if idx < len(companies_info):
+                        structured_data += "---\n\n"
                 
                 elif is_parameter_query:
-                    # Handle parameter query results (original logic)
-                    # Group results by parameter and deduplicate by period-value-currency combination
+                    # Handle parameter query results with proper validation and edge case handling
                     params_found = {}
                     periods_found = set()
                     seen_combinations = {}  # Track seen period+value+currency combinations to deduplicate
+                    company_names_found = {}  # Track all companies in results to get the most common one
+                    
+                    # First pass: Extract all data with proper validation
+                    valid_results_count = 0
+                    
+                    if self.log_manager:
+                        self.log_manager.add_info_log(f'Processing {len(structured_results)} result(s) for parameter query formatting')
+                        if structured_results:
+                            sample_result = structured_results[0]
+                            sample_keys = list(sample_result.keys()) if isinstance(sample_result, dict) else []
+                            self.log_manager.add_info_log(f'Sample result keys: {sample_keys}')
                     
                     for result in structured_results:
-                        if isinstance(result, dict):
-                            param_name = result.get('p.parameter_name', result.get('parameter_name', 'Unknown'))
-                            period = result.get('pr.period', result.get('period', 'Unknown'))
-                            value = result.get('pr.value', result.get('value', 'N/A'))
-                            currency = result.get('pr.currency', result.get('currency', 'N/A'))
-                            yoy_growth = result.get('pr.yoy_growth', result.get('yoy_growth', 'N/A'))
+                        if not isinstance(result, dict):
+                            continue
+                        
+                        # Extract company name (try multiple field name variations)
+                        company_name = (
+                            result.get('c.company_name') or 
+                            result.get('company_name') or 
+                            None
+                        )
+                        if company_name and company_name != 'N/A' and company_name != 'Unknown':
+                            company_names_found[company_name] = company_names_found.get(company_name, 0) + 1
+                        
+                        # Extract parameter name (try multiple field name variations)
+                        param_name = (
+                            result.get('p.parameter_name') or 
+                            result.get('parameter_name') or
+                            None
+                        )
+                        if not param_name or param_name == 'N/A' or param_name == 'Unknown':
+                            if self.log_manager:
+                                self.log_manager.add_info_log(f'Skipping result with missing/invalid parameter name: {result}')
+                            continue
+                        
+                        # Extract period (try multiple field name variations)
+                        period = (
+                            result.get('pr.period') or 
+                            result.get('period') or
+                            None
+                        )
+                        if not period or period == 'N/A' or period == 'Unknown':
+                            if self.log_manager:
+                                self.log_manager.add_info_log(f'Skipping result with missing/invalid period: {result}')
+                            continue
+                        
+                        # Extract value (try multiple field name variations)
+                        value = (
+                            result.get('pr.value') or 
+                            result.get('value') or
+                            None
+                        )
+                        if value is None or value == 'N/A':
+                            if self.log_manager:
+                                self.log_manager.add_info_log(f'Skipping result with missing/invalid value: {result}')
+                            continue
+                        
+                        # Extract currency (try multiple field name variations, optional)
+                        currency = (
+                            result.get('pr.currency') or 
+                            result.get('currency') or
+                            'N/A'
+                        )
+                        
+                        # Extract YoY growth (try multiple field name variations, optional)
+                        yoy_growth = (
+                            result.get('pr.yoy_growth') or 
+                            result.get('yoy_growth') or
+                            None
+                        )
+                        
+                        # Create unique key that includes parameter name to keep similar parameters separate
+                        # Use exact value (not rounded) to preserve distinct values even if close
+                        if isinstance(value, (int, float)):
+                            value_key = str(value)  # Keep exact value for uniqueness
+                        else:
+                            value_key = str(value)
+                        
+                        # Include parameter name in unique key so similar parameters are kept distinct
+                        unique_key = f"{param_name}|{period}|{value_key}|{currency}"
+                        
+                        # Only add if we haven't seen this exact combination before
+                        if unique_key not in seen_combinations:
+                            seen_combinations[unique_key] = True
+                            periods_found.add(period)
+                            valid_results_count += 1
                             
-                            # Create unique key that includes parameter name to keep similar parameters separate
-                            # Use exact value (not rounded) to preserve distinct values even if close
-                            # This ensures "Accounts receivable" and "Accounts receivable, Average" are shown separately
-                            if isinstance(value, (int, float)):
-                                value_key = str(value)  # Keep exact value for uniqueness
-                            else:
-                                value_key = str(value)
+                            if param_name not in params_found:
+                                params_found[param_name] = []
                             
-                            # Include parameter name in unique key so similar parameters are kept distinct
-                            unique_key = f"{param_name}|{period}|{value_key}|{currency}"
-                            
-                            # Only add if we haven't seen this exact combination before
-                            # Different parameter names with same period+value will be shown separately
-                            if unique_key not in seen_combinations:
-                                seen_combinations[unique_key] = True
-                                periods_found.add(period)
-                                
-                                if param_name not in params_found:
-                                    params_found[param_name] = []
-                                
-                                params_found[param_name].append({
-                                    'period': period,
-                                    'value': value,
-                                    'currency': currency,
-                                    'yoy_growth': yoy_growth
-                                })
+                            params_found[param_name].append({
+                                'period': period,
+                                'value': value,
+                                'currency': currency,
+                                'yoy_growth': yoy_growth
+                            })
+                    
+                    # Get the most common company name (most reliable method)
+                    if company_names_found:
+                        # Sort by frequency and get the most common
+                        company_name = max(company_names_found.items(), key=lambda x: x[1])[0]
+                        if self.log_manager:
+                            self.log_manager.add_info_log(f'Company name determined from {len(company_names_found)} occurrence(s): "{company_name}"')
+                            self.log_manager.add_info_log(f'Company name frequencies: {company_names_found}')
+                    else:
+                        # Fallback: Try to get from first valid result
+                        for result in structured_results:
+                            if isinstance(result, dict):
+                                company_name = (
+                                    result.get('c.company_name') or 
+                                    result.get('company_name') or 
+                                    None
+                                )
+                                if company_name and company_name != 'N/A' and company_name != 'Unknown':
+                                    break
+                        
+                        # Final fallback
+                        if not company_name or company_name == 'N/A' or company_name == 'Unknown':
+                            company_name = 'Unknown Company'
                     
                     # Calculate total deduplicated records
                     total_deduped_records = sum(len(records) for records in params_found.values())
                     
-                    # Format as readable data
-                    structured_data = f"Found {total_deduped_records} unique data records (after deduplication):\n\n"
-                    company_name = structured_results[0].get('c.company_name', structured_results[0].get('company_name', 'Unknown'))
-                    structured_data += f"Company: {company_name}\n"
-                    structured_data += f"Periods in data: {', '.join(sorted(periods_found))}\n\n"
+                    # Validate we have data to display
+                    if not params_found or total_deduped_records == 0:
+                        if self.log_manager:
+                            self.log_manager.add_info_log(f'No valid parameter data found after processing. Valid results: {valid_results_count}, Params found: {len(params_found)}, Total deduped: {total_deduped_records}')
+                        return ""  # Return empty - no hallucinations
                     
-                    # Check if we have multiple similar parameter names (e.g., "Accounts receivable" and "Accounts receivable, Average")
-                    has_similar_params = len(params_found) > 1
-                    similar_param_base = None
-                    if has_similar_params:
-                        # Check if parameters share a common base name
-                        param_names = list(params_found.keys())
-                        first_base = param_names[0].split(',')[0].strip()
-                        if all(p.split(',')[0].strip() == first_base for p in param_names):
-                            similar_param_base = first_base
-                            has_similar_params = True
+                    if self.log_manager:
+                        self.log_manager.add_info_log(f'Parameter query formatting: Company="{company_name}", Parameters={list(params_found.keys())}, Total records={total_deduped_records}')
                     
-                    # Group records by parameter for better table structure
+                    # Professional parameter query formatting with enhanced summary
+                    structured_data = f"## Financial Data for {company_name}\n\n"
+                    
+                    # Summary section as a formatted list (will be styled as a card)
+                    structured_data += f"**Summary:**\n"
+                    structured_data += f"- **Company:** {company_name}\n"
+                    structured_data += f"- **Parameters Found:** {len(params_found)}\n"
+                    structured_data += f"- **Total Records:** {total_deduped_records} unique record{'s' if total_deduped_records != 1 else ''}\n"
+                    if periods_found:
+                        periods_sorted = sorted(periods_found)
+                        periods_display = periods_sorted[:10]  # Limit to 10 for display
+                        if len(periods_sorted) > 10:
+                            periods_display_str = ', '.join(periods_display) + f' (and {len(periods_sorted) - 10} more)'
+                        else:
+                            periods_display_str = ', '.join(periods_display)
+                        structured_data += f"- **Periods:** {periods_display_str}\n"
+                    structured_data += "\n"
+                    
+                    # Format each parameter as a professional table
                     for param_name, records in params_found.items():
-                        structured_data += f"\nParameter: {param_name} ({len(records)} unique records)\n"
-                        # Sort records by period for chronological order
-                        sorted_records = sorted(records[:20], key=lambda x: x['period'])  # Limit to 20 per parameter, sorted
+                        if not records or len(records) == 0:
+                            continue  # Skip empty parameter groups
+                        
+                        structured_data += f"### {param_name}\n\n"
+                        
+                        # Sort records by period for chronological order (newest first)
+                        # Handle edge case: period might not be sortable string, so use safe sorting
+                        try:
+                            sorted_records = sorted(records[:20], key=lambda x: str(x.get('period', '')), reverse=True)
+                        except Exception:
+                            sorted_records = records[:20]  # Fallback to unsorted if sorting fails
+                        
+                        # Validate we have records to display
+                        if not sorted_records:
+                            structured_data += "*No data available for this parameter.*\n\n"
+                            continue
+                        
+                        # Create markdown table with EXACT 4 columns (CRITICAL for alignment)
+                        # Column order MUST match data row order exactly
+                        structured_data += "| Period | Value | Currency | YoY Growth |\n"
+                        structured_data += "|:------|------:|:--------:|:----------:|\n"  # Center-align for readability
+                        
                         for record in sorted_records:
-                            # Format value with proper decimal places
-                            value = record['value']
-                            if isinstance(value, (int, float)):
-                                if abs(value) >= 1000000:
-                                    formatted_value = f"{value:,.2f}"
-                                else:
-                                    formatted_value = f"{value:.2f}"
-                            else:
-                                formatted_value = str(value)
+                            # Extract and validate each field with proper fallbacks
+                            period_str = str(record.get('period', 'N/A'))
+                            if period_str == 'None' or period_str == '':
+                                period_str = 'N/A'
                             
-                            structured_data += f"  - Period: {record['period']}, Value: {formatted_value}, Currency: {record['currency']}"
-                            if record['yoy_growth'] != 'N/A' and record['yoy_growth'] is not None:
-                                growth_value = record['yoy_growth']
-                                if isinstance(growth_value, (int, float)):
-                                    structured_data += f", YoY Growth: {growth_value:.2f}%"
-                                else:
-                                    structured_data += f", YoY Growth: {growth_value}%"
-                            structured_data += "\n"
+                            # Format value with validation (CRITICAL: Must be in correct column order)
+                            value = record.get('value')
+                            if value is None or value == 'N/A':
+                                value_str = 'N/A'
+                            else:
+                                try:
+                                    value_str = self._format_value(value, record.get('currency'))
+                                except Exception as e:
+                                    if self.log_manager:
+                                        self.log_manager.add_info_log(f'Error formatting value {value}: {str(e)}')
+                                    value_str = str(value) if value else 'N/A'
+                            
+                            # Format currency with validation (CRITICAL: Must be in correct column order)
+                            currency = record.get('currency')
+                            if currency is None or currency == 'N/A' or currency == 'None':
+                                currency_str = '-'
+                            else:
+                                currency_str = str(currency).strip()
+                            
+                            # Format YoY growth with validation (CRITICAL: Must be in correct column order)
+                            yoy_growth = record.get('yoy_growth')
+                            if yoy_growth is None or yoy_growth == 'N/A' or yoy_growth == 'None':
+                                growth_str = '-'
+                            else:
+                                try:
+                                    # Convert to percentage format
+                                    if isinstance(yoy_growth, (int, float)):
+                                        growth_str = f"{yoy_growth:.2f}%"
+                                    else:
+                                        growth_str = str(yoy_growth)
+                                    # Ensure it has % sign
+                                    if not growth_str.endswith('%'):
+                                        growth_str = growth_str + '%'
+                                except Exception as e:
+                                    if self.log_manager:
+                                        self.log_manager.add_info_log(f'Error formatting YoY growth {yoy_growth}: {str(e)}')
+                                    growth_str = str(yoy_growth) if yoy_growth else '-'
+                            
+                            # CRITICAL: Table row MUST match column header order exactly:
+                            # | Period | Value | Currency | YoY Growth |
+                            structured_data += f"| {period_str} | {value_str} | {currency_str} | {growth_str} |\n"
+                            
+                            # Log for debugging
+                            if self.log_manager and len(sorted_records) <= 3:
+                                self.log_manager.add_info_log(
+                                    f'Table row: Period={period_str}, Value={value_str}, Currency={currency_str}, Growth={growth_str}'
+                                )
+                        
+                        structured_data += "\n"
                     
-                    structured_data += f"\nTotal: {len(structured_results)} records found across {len(params_found)} parameters.\n"
+                    # Footer note with accurate information
+                    skipped_count = len(structured_results) - valid_results_count
+                    duplicate_count = valid_results_count - total_deduped_records
+                    
+                    notes = []
+                    if skipped_count > 0:
+                        notes.append(f"{skipped_count} invalid record{'s' if skipped_count != 1 else ''} skipped")
+                    if duplicate_count > 0:
+                        notes.append(f"{duplicate_count} duplicate record{'s' if duplicate_count != 1 else ''} removed")
+                    
+                    if notes:
+                        structured_data += f"*Note: {'; '.join(notes)}.*\n"
                 else:
-                    # Generic query - format all fields
+                    # Generic query - format all fields in a professional table
                     if self.log_manager:
                         self.log_manager.add_info_log('Unknown query type - formatting all fields')
-                    structured_data = f"Found {len(structured_results)} record(s):\n\n"
-                    for i, result in enumerate(structured_results[:10], 1):
-                        structured_data += f"Record {i}:\n"
-                        for key, value in result.items():
-                            structured_data += f"  {key}: {value}\n"
-                        structured_data += "\n"
+                    
+                    structured_data = f"## Query Results\n\n"
+                    structured_data += f"Found **{len(structured_results)}** record(s)\n\n"
+                    
+                    if structured_results:
+                        # Get all unique keys from all results
+                        all_keys = set()
+                        for result in structured_results[:10]:
+                            if isinstance(result, dict):
+                                all_keys.update(result.keys())
+                        
+                        # Create table header
+                        if all_keys:
+                            structured_data += "| " + " | ".join(all_keys) + " |\n"
+                            structured_data += "|" + "|".join(["---" for _ in all_keys]) + "|\n"
+                            
+                            # Add rows
+                            for result in structured_results[:10]:
+                                if isinstance(result, dict):
+                                    row_values = [str(result.get(key, '-')) for key in all_keys]
+                                    structured_data += "| " + " | ".join(row_values) + " |\n"
+                            structured_data += "\n"
             else:
                 # No results - return empty string (no hallucinations)
                 if self.log_manager:
@@ -1496,12 +1868,18 @@ class PEERSGraphRAG:
             if self.log_manager:
                 self.log_manager.add_info_log(f'GraphRAG flow completed successfully')
             
-            return textwrap.fill(final_answer, 60)
+            # CRITICAL: Do NOT use textwrap.fill() as it breaks markdown table formatting
+            # Return the final answer as-is to preserve markdown structure
+            return final_answer
             
         except Exception as e:
+            error_msg = str(e)
             if self.log_manager:
-                self.log_manager.add_error_log(f'GraphRAG flow failed: {str(e)}', e)
-            raise
+                self.log_manager.add_error_log(f'GraphRAG flow failed: {error_msg}', e)
+            
+            # Provide user-friendly error message instead of raising
+            # This prevents the Flask app from returning 500 errors
+            return f"**Error processing query:**\n\n{error_msg}\n\n**Query:** {question}\n\n*Please check the query format and try again.*"
     
     def get_cypher_history(self):
         """Get the history of generated Cypher queries"""
