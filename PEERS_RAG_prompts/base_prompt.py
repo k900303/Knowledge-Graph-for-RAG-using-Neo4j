@@ -24,13 +24,26 @@ TOOL USAGE ORDER:
 CYPHER QUERY REQUIREMENTS:
 - Match exact company, parameter, sector, industry, and geography names from tool results
 - Include proper relationship patterns ([:HAS_PARAMETER], [:IN_COUNTRY], [:IN_SECTOR], [:IN_INDUSTRY], [:IN_REGION])
-- Return relevant fields (company_name, parameter_name, period, value, currency, sector, industry, country, etc.)
+- **ALWAYS include unit fields (parameter_unit_name, parameter_unit, parameter_shortcode, result_unit_name, result_unit, result_shortcode)**
+- Return relevant fields (company_name, parameter_name, period, value, currency, units, sector, industry, country, etc.)
 - Handle period filtering appropriately (latest, specific quarters, FY periods)
 
 EXAMPLE FORMAT - Parameter Query:
 MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
 WHERE c.company_name CONTAINS 'Exact Company Name' AND p.parameter_name CONTAINS 'Exact Parameter Name'
-RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency
+OPTIONAL MATCH (p)-[:HAS_UNIT]->(pu:ParameterUnit)
+OPTIONAL MATCH (pr)-[:HAS_UNIT]->(ru:ResultUnit)
+RETURN c.company_name, p.parameter_name, 
+       COALESCE(pu.unit_id, p.unit_id, '') as parameter_unit_id,
+       COALESCE(pu.value_name, '') as parameter_unit_name,
+       COALESCE(pu.short_name, p.unit, '') as parameter_unit,
+       COALESCE(pu.key, '') as parameter_shortcode,
+       pr.period, pr.value, pr.currency,
+       COALESCE(ru.unit_id, pr.unit_id, '') as result_unit_id,
+       COALESCE(ru.value_name, '') as result_unit_name,
+       COALESCE(ru.short_name, pr.unit, '') as result_unit,
+       COALESCE(ru.key, '') as result_shortcode,
+       pr.yoy_growth
 
 EXAMPLE FORMAT - Filter Query:
 MATCH (c:Company)-[:IN_COUNTRY]->(country:Country),
@@ -38,6 +51,13 @@ MATCH (c:Company)-[:IN_COUNTRY]->(country:Country),
       (c)-[:IN_INDUSTRY]->(i:Industry)
 WHERE s.name = 'Exact Sector Name' AND country.code = 'Exact Country Code'
 RETURN c.company_name, c.cid, s.name as sector, country.name as country, c.market_cap
+
+IMPORTANT - UNIT DISPLAY:
+When presenting results to the user, ALWAYS include the unit information:
+- For percentage values: show as "15.40%" using parameter_unit or result_unit
+- For currency values: show with currency code and unit (e.g., "1,250 Million INR")
+- For ratio values: show with "x" suffix (e.g., "2.5x")
+- Always display: VALUE + UNIT (short_name) format
 
 FINAL RESPONSE RULE:
 Your final response should contain ONLY a valid Cypher query, no explanations, no markdown, no code blocks."""

@@ -6,6 +6,7 @@ Extracts structured data from company_master CSV for Neo4j ingestion
 import csv
 from typing import List, Dict, Set
 from dataclasses import dataclass, field
+from unit_mapper import UnitMapper, get_unit_mapper
 
 
 @dataclass
@@ -40,8 +41,9 @@ class Parameter:
     parameter_name: str
     parameter_type: str  # opssd, sd, cd, etc.
     cid: str  # company_id
-    unit: str
-    isprimary: int
+    unit: str  # Display name (for backward compatibility)
+    unit_id: str = ""  # Original unit ID from CSV (for linking to Unit nodes)
+    isprimary: int = 0
 
 
 @dataclass
@@ -54,8 +56,9 @@ class PeriodResult:
     actual_period: str  # actual period value (mapped from 'ap')
     value: float  # the actual value (mapped from 'v')
     currency: str  # currency code (mapped from 'ciso')
-    unit: int  # unit type (mapped from 'u')
+    unit: str  # unit display name (mapped from 'u' ID via unit_mapper, for backward compatibility)
     data_type: str  # A=Actual, E=Estimated, etc. (mapped from 'dt')
+    unit_id: str = ""  # Original unit ID from CSV (for linking to Unit nodes)
     yoy_growth: float = 0.0  # year-over-year growth (mapped from 'yoypc')
     seq_growth: float = 0.0  # sequential growth (mapped from 'seqpc')
 
@@ -173,9 +176,11 @@ class CSVParser:
 class ParameterParser:
     """Parser for parameter CSV file"""
     
-    def __init__(self, csv_file_path: str):
+    def __init__(self, csv_file_path: str, unit_mapper: UnitMapper = None):
         self.csv_file_path = csv_file_path
         self.parameters: List[Parameter] = []
+        # Use provided mapper or get global instance
+        self.unit_mapper = unit_mapper if unit_mapper else get_unit_mapper()
     
     def parse(self, target_cid: str = "18315", allowed_types: List[str] = ["opssd", "sd"]) -> List[Parameter]:
         """Parse parameter CSV file with filtering"""
@@ -204,13 +209,19 @@ class ParameterParser:
         return self.parameters
     
     def _parse_parameter(self, row: Dict) -> Parameter:
-        """Parse a single row into a Parameter object - optimized for 6 essential fields only"""
+        """Parse a single row into a Parameter object - optimized with unit support"""
+        # Get unit ID from CSV (original ID)
+        unit_id = row.get('unit', '').strip()
+        # Map unit ID to display name (for backward compatibility)
+        unit_display = self.unit_mapper.get_param_unit_display_safe(unit_id)
+        
         return Parameter(
             param_id=row.get('param_id', '').strip(),
             parameter_name=row.get('parameter_name', '').strip(),
             parameter_type=row.get('parameter_type', '').strip(),
             cid=row.get('cid', '').strip(),
-            unit=row.get('unit', '').strip(),
+            unit=unit_display,  # Display name (for backward compatibility)
+            unit_id=unit_id,  # Original unit ID (for linking to Unit nodes)
             isprimary=int(row.get('isprimary', '0'))
         )
     
@@ -222,9 +233,11 @@ class ParameterParser:
 class ResultsParser:
     """Parser for results CSV file"""
     
-    def __init__(self, csv_file_path: str):
+    def __init__(self, csv_file_path: str, unit_mapper: UnitMapper = None):
         self.csv_file_path = csv_file_path
         self.results: List[PeriodResult] = []
+        # Use provided mapper or get global instance
+        self.unit_mapper = unit_mapper if unit_mapper else get_unit_mapper()
     
     def parse(self, target_cid: str = "18315") -> List[PeriodResult]:
         """Parse results CSV file with filtering"""
@@ -261,6 +274,11 @@ class ResultsParser:
             if len(parts) >= 2:
                 pid = parts[1]  # Second part is pid
         
+        # Get unit ID from CSV and map to display name
+        unit_id_int = self._safe_int(row.get('u', '0'))
+        unit_id_str = str(unit_id_int) if unit_id_int else ''
+        unit_display = self.unit_mapper.get_result_unit_display_safe(unit_id_int)
+        
         return PeriodResult(
             id=id_field,
             cid=row.get('cid', '').strip(),
@@ -269,7 +287,8 @@ class ResultsParser:
             actual_period=row.get('ap', '').strip(),
             value=self._safe_float(row.get('v', '0')),
             currency=row.get('ciso', '').strip(),
-            unit=self._safe_int(row.get('u', '0')),
+            unit=unit_display,  # Display name (for backward compatibility)
+            unit_id=unit_id_str,  # Original unit ID (for linking to Unit nodes)
             data_type=row.get('dt', '').strip(),
             yoy_growth=self._safe_float(row.get('yoypc', '0')),
             seq_growth=self._safe_float(row.get('seqpc', '0'))

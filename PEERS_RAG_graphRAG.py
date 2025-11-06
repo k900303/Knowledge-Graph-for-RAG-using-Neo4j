@@ -496,7 +496,7 @@ class PEERSGraphRAG:
         
         if not company:
             # If no company found, return a generic parameter query
-            return "MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth LIMIT 20"
+            return "MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult) OPTIONAL MATCH (p)-[:HAS_UNIT]->(pu:ParameterUnit) OPTIONAL MATCH (pr)-[:HAS_UNIT]->(ru:ResultUnit) RETURN c.company_name, p.parameter_name, COALESCE(pu.unit_id, p.unit_id, '') as parameter_unit_id, COALESCE(pu.value_name, '') as parameter_unit_name, COALESCE(pu.short_name, p.unit, '') as parameter_unit, COALESCE(pu.key, '') as parameter_shortcode, pr.period, pr.value, pr.currency, COALESCE(ru.unit_id, pr.unit_id, '') as result_unit_id, COALESCE(ru.value_name, '') as result_unit_name, COALESCE(ru.short_name, pr.unit, '') as result_unit, COALESCE(ru.key, '') as result_shortcode, pr.yoy_growth LIMIT 20"
         
         # Build company filter
         company_word = company.split()[0] if company else ''
@@ -552,7 +552,9 @@ class PEERSGraphRAG:
         
         query = f"MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)"
         query += f" WHERE {where_clause}"
-        query += f" RETURN DISTINCT c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth"
+        query += f" OPTIONAL MATCH (p)-[:HAS_UNIT]->(pu:ParameterUnit)"
+        query += f" OPTIONAL MATCH (pr)-[:HAS_UNIT]->(ru:ResultUnit)"
+        query += f" RETURN DISTINCT c.company_name, p.parameter_name, COALESCE(pu.unit_id, p.unit_id, '') as parameter_unit_id, COALESCE(pu.value_name, '') as parameter_unit_name, COALESCE(pu.short_name, p.unit, '') as parameter_unit, COALESCE(pu.key, '') as parameter_shortcode, pr.period, pr.value, pr.currency, COALESCE(ru.unit_id, pr.unit_id, '') as result_unit_id, COALESCE(ru.value_name, '') as result_unit_name, COALESCE(ru.short_name, pr.unit, '') as result_unit, COALESCE(ru.key, '') as result_shortcode, pr.yoy_growth"
         
         # Build final query with proper spacing - don't strip the leading space!
         if order_clause:
@@ -905,7 +907,9 @@ class PEERSGraphRAG:
             query = f"MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)"
             if where_clause:
                 query += f" WHERE {where_clause}"
-            query += f" RETURN DISTINCT c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth"
+            query += f" OPTIONAL MATCH (p)-[:HAS_UNIT]->(pu:ParameterUnit)"
+            query += f" OPTIONAL MATCH (pr)-[:HAS_UNIT]->(ru:ResultUnit)"
+            query += f" RETURN DISTINCT c.company_name, p.parameter_name, COALESCE(pu.unit_id, p.unit_id, '') as parameter_unit_id, COALESCE(pu.value_name, '') as parameter_unit_name, COALESCE(pu.short_name, p.unit, '') as parameter_unit, COALESCE(pu.key, '') as parameter_shortcode, pr.period, pr.value, pr.currency, COALESCE(ru.unit_id, pr.unit_id, '') as result_unit_id, COALESCE(ru.value_name, '') as result_unit_name, COALESCE(ru.short_name, pr.unit, '') as result_unit, COALESCE(ru.key, '') as result_shortcode, pr.yoy_growth"
             
             # Add ORDER BY and LIMIT with proper spacing - don't strip leading space!
             if order_clause:

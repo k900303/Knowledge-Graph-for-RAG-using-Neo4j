@@ -5,6 +5,7 @@ Creates graph nodes and relationships from parsed CSV data
 
 from neo4j_env import graph
 from csv_parser import Company, CSVParser, Parameter, PeriodResult, ParameterParser, ResultsParser
+from unit_mapper import UnitMapper, get_unit_mapper, UnitData
 from typing import List
 import warnings
 
@@ -16,6 +17,7 @@ class PEERSNeo4jIngestion:
     
     def __init__(self):
         self.graph = graph
+        self.unit_mapper = get_unit_mapper()
     
     def create_company_graph(self, parser: CSVParser, batch_size: int = 100, filter_country: str = None):
         """
@@ -287,6 +289,72 @@ class PEERSNeo4jIngestion:
             print(f"  {row['rel_type']}: {row['count']}")
         
         print("="*50)
+    
+    def create_unit_nodes(self):
+        """
+        Create Unit nodes in Neo4j for both parameter and result units
+        This should be called before creating Parameter and PeriodResult nodes
+        """
+        print("\n" + "="*80)
+        print("Creating Unit Nodes (Parameter Units and Result Units)")
+        print("="*80)
+        
+        # Create Parameter Unit nodes
+        param_units = self.unit_mapper.get_all_param_units()
+        print(f"Creating {len(param_units)} parameter unit nodes...")
+        
+        param_unit_data = []
+        for unit in param_units:
+            param_unit_data.append({
+                "unit_id": unit.unit_id,
+                "value_name": unit.value_name,
+                "short_name": unit.short_name,
+                "key": unit.key,
+                "unit_type": "ParameterUnit"
+            })
+        
+        if param_unit_data:
+            cypher = """
+            UNWIND $units AS unit
+            MERGE (u:ParameterUnit {unit_id: unit.unit_id})
+            SET u.value_name = unit.value_name,
+                u.short_name = unit.short_name,
+                u.key = unit.key,
+                u.unit_type = unit.unit_type
+            RETURN count(u) as count
+            """
+            result = self.graph.query(cypher, {"units": param_unit_data})
+            print(f"  [OK] Created {result[0]['count']} ParameterUnit nodes")
+        
+        # Create Result Unit nodes
+        result_units = self.unit_mapper.get_all_result_units()
+        print(f"Creating {len(result_units)} result unit nodes...")
+        
+        result_unit_data = []
+        for unit in result_units:
+            result_unit_data.append({
+                "unit_id": unit.unit_id,
+                "value_name": unit.value_name,
+                "short_name": unit.short_name,
+                "key": unit.key,
+                "unit_type": "ResultUnit"
+            })
+        
+        if result_unit_data:
+            cypher = """
+            UNWIND $units AS unit
+            MERGE (u:ResultUnit {unit_id: unit.unit_id})
+            SET u.value_name = unit.value_name,
+                u.short_name = unit.short_name,
+                u.key = unit.key,
+                u.unit_type = unit.unit_type
+            RETURN count(u) as count
+            """
+            result = self.graph.query(cypher, {"units": result_unit_data})
+            print(f"  [OK] Created {result[0]['count']} ResultUnit nodes")
+        
+        print("[OK] Unit nodes creation completed!")
+        print("="*80)
 
     def create_parameter_nodes(self, parameter_parser: ParameterParser, batch_size: int = 100):
         """
@@ -332,7 +400,8 @@ class PEERSNeo4jIngestion:
                     "parameter_name": parameter.parameter_name,
                     "parameter_type": parameter.parameter_type,
                     "cid": parameter.cid,
-                    "unit": parameter.unit,
+                    "unit": parameter.unit,  # Display name (backward compatibility)
+                    "unit_id": parameter.unit_id,  # Original unit ID
                     "isprimary": parameter.isprimary
                 }
                 
@@ -344,6 +413,7 @@ class PEERSNeo4jIngestion:
                 SET param.parameter_type = $parameter_type,
                     param.cid = $cid,
                     param.unit = $unit,
+                    param.unit_id = $unit_id,
                     param.isprimary = $isprimary
                 RETURN param.param_id
                 """
@@ -352,6 +422,10 @@ class PEERSNeo4jIngestion:
                 
                 # Create Company-Parameter relationship
                 self._create_parameter_relationship(parameter.cid, parameter.param_id)
+                
+                # Create Parameter-Unit relationship if unit_id exists
+                if parameter.unit_id:
+                    self._create_parameter_unit_relationship(parameter.param_id, parameter.unit_id)
                 
                 successful_count += 1
                 
@@ -374,6 +448,35 @@ class PEERSNeo4jIngestion:
         except Exception as e:
             print(f"  [WARN] Failed to create HAS_PARAMETER relationship for company {company_cid}, parameter {param_id}: {e}")
             pass
+    
+    def _create_parameter_unit_relationship(self, param_id: str, unit_id: str):
+        """Helper method to create Parameter-ParameterUnit relationship"""
+        try:
+            if not unit_id or not unit_id.strip():
+                return  # Skip if no unit_id
+            
+            # Check if unit node exists first
+            check_cypher = """
+            MATCH (u:ParameterUnit {unit_id: $unit_id})
+            RETURN u.unit_id LIMIT 1
+            """
+            result = self.graph.query(check_cypher, {"unit_id": unit_id})
+            
+            if not result or len(result) == 0:
+                # Unit node doesn't exist - log but don't fail
+                print(f"  [WARN] ParameterUnit with unit_id='{unit_id}' not found for parameter {param_id}")
+                return
+            
+            cypher = """
+            MATCH (p:Parameter {param_id: $param_id})
+            MATCH (u:ParameterUnit {unit_id: $unit_id})
+            MERGE (p)-[:HAS_UNIT]->(u)
+            RETURN count(*) as count
+            """
+            
+            self.graph.query(cypher, {"param_id": param_id, "unit_id": unit_id})
+        except Exception as e:
+            print(f"  [WARN] Failed to create Parameter-Unit relationship for param {param_id}, unit {unit_id}: {e}")
     
     def create_period_results(self, results_parser: ResultsParser, batch_size: int = 100):
         """
@@ -422,7 +525,8 @@ class PEERSNeo4jIngestion:
                     "actual_period": result.actual_period,
                     "value": result.value,
                     "currency": result.currency,
-                    "unit": result.unit,
+                    "unit": result.unit,  # Display name (backward compatibility)
+                    "unit_id": result.unit_id,  # Original unit ID
                     "data_type": result.data_type,
                     "yoy_growth": result.yoy_growth,
                     "seq_growth": result.seq_growth
@@ -439,6 +543,7 @@ class PEERSNeo4jIngestion:
                     pr.value = $value,
                     pr.currency = $currency,
                     pr.unit = $unit,
+                    pr.unit_id = $unit_id,
                     pr.data_type = $data_type,
                     pr.yoy_growth = $yoy_growth,
                     pr.seq_growth = $seq_growth
@@ -449,6 +554,10 @@ class PEERSNeo4jIngestion:
                 
                 # Create dual relationships
                 self._create_period_result_relationships(result.cid, result.pid, result.id)
+                
+                # Create PeriodResult-Unit relationship if unit_id exists
+                if result.unit_id:
+                    self._create_result_unit_relationship(result.id, result.unit_id)
                 
                 successful_count += 1
                 
@@ -480,6 +589,35 @@ class PEERSNeo4jIngestion:
         except Exception as e:
             print(f"  [WARN] Failed to create period result relationships for result {result_id}: {e}")
             pass
+    
+    def _create_result_unit_relationship(self, result_id: str, unit_id: str):
+        """Helper method to create PeriodResult-ResultUnit relationship"""
+        try:
+            if not unit_id or not unit_id.strip():
+                return  # Skip if no unit_id
+            
+            # Check if unit node exists first
+            check_cypher = """
+            MATCH (u:ResultUnit {unit_id: $unit_id})
+            RETURN u.unit_id LIMIT 1
+            """
+            result = self.graph.query(check_cypher, {"unit_id": unit_id})
+            
+            if not result or len(result) == 0:
+                # Unit node doesn't exist - log but don't fail
+                print(f"  [WARN] ResultUnit with unit_id='{unit_id}' not found for result {result_id}")
+                return
+            
+            cypher = """
+            MATCH (pr:PeriodResult {id: $result_id})
+            MATCH (u:ResultUnit {unit_id: $unit_id})
+            MERGE (pr)-[:HAS_UNIT]->(u)
+            RETURN count(*) as count
+            """
+            
+            self.graph.query(cypher, {"result_id": result_id, "unit_id": unit_id})
+        except Exception as e:
+            print(f"  [WARN] Failed to create PeriodResult-Unit relationship for result {result_id}, unit {unit_id}: {e}")
 
 
 def main():

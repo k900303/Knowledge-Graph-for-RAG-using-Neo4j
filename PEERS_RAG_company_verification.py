@@ -438,7 +438,19 @@ class CompanyQueryBuilder:
         
         query = f"""MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
                     WHERE {where_clause}
-                    RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth"""
+                    OPTIONAL MATCH (p)-[:HAS_UNIT]->(pu:ParameterUnit)
+                    OPTIONAL MATCH (pr)-[:HAS_UNIT]->(ru:ResultUnit)
+                    RETURN c.company_name, p.parameter_name, 
+                           COALESCE(pu.unit_id, p.unit_id, '') as parameter_unit_id, 
+                           COALESCE(pu.value_name, '') as parameter_unit_name, 
+                           COALESCE(pu.short_name, p.unit, '') as parameter_unit,
+                           COALESCE(pu.key, '') as parameter_shortcode,
+                           pr.period, pr.value, pr.currency, 
+                           COALESCE(ru.unit_id, pr.unit_id, '') as result_unit_id, 
+                           COALESCE(ru.value_name, '') as result_unit_name, 
+                           COALESCE(ru.short_name, pr.unit, '') as result_unit,
+                           COALESCE(ru.key, '') as result_shortcode,
+                           pr.yoy_growth"""
         
         if period == 'latest':
             query += " ORDER BY pr.period DESC LIMIT 20"

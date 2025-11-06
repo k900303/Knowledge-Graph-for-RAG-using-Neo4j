@@ -60,6 +60,11 @@ class PEERSPipeline:
         self.ingestion.create_company_graph(self.parser, batch_size=100, filter_country='IN')
         print("[OK] Company graph created successfully")
         
+        # Step 2.5: Create unit nodes (must be done before parameters/results)
+        print("\n[2.5/6] Creating unit nodes...")
+        self.ingestion.create_unit_nodes()
+        print("[OK] Unit nodes created successfully")
+        
         # Step 3: Create parameter nodes
         if self.parameter_parser:
             print("\n[3/6] Creating parameter nodes...")

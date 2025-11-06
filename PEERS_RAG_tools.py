@@ -761,7 +761,19 @@ class CypherGeneratorTool(BaseToolHandler):
                 WHERE c.company_name CONTAINS '{company_name}'
                   AND {param_filter}
                   AND pr.period = latest_period
-                RETURN DISTINCT c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth
+                OPTIONAL MATCH (p)-[:HAS_UNIT]->(pu:ParameterUnit)
+                OPTIONAL MATCH (pr)-[:HAS_UNIT]->(ru:ResultUnit)
+                RETURN DISTINCT c.company_name, p.parameter_name, 
+                       COALESCE(pu.unit_id, p.unit_id, '') as parameter_unit_id, 
+                       COALESCE(pu.value_name, '') as parameter_unit_name, 
+                       COALESCE(pu.short_name, p.unit, '') as parameter_unit,
+                       COALESCE(pu.key, '') as parameter_shortcode,
+                       pr.period, pr.value, pr.currency, 
+                       COALESCE(ru.unit_id, pr.unit_id, '') as result_unit_id, 
+                       COALESCE(ru.value_name, '') as result_unit_name, 
+                       COALESCE(ru.short_name, pr.unit, '') as result_unit,
+                       COALESCE(ru.key, '') as result_shortcode,
+                       pr.yoy_growth
                 ORDER BY p.parameter_name, pr.period DESC
                 """.strip()
             elif periods:
@@ -773,7 +785,19 @@ class CypherGeneratorTool(BaseToolHandler):
                 WHERE c.company_name CONTAINS '{company_name}'
                   AND {param_filter}
                   {period_filter}
-                RETURN DISTINCT c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth
+                OPTIONAL MATCH (p)-[:HAS_UNIT]->(pu:ParameterUnit)
+                OPTIONAL MATCH (pr)-[:HAS_UNIT]->(ru:ResultUnit)
+                RETURN DISTINCT c.company_name, p.parameter_name, 
+                       COALESCE(pu.unit_id, p.unit_id, '') as parameter_unit_id, 
+                       COALESCE(pu.value_name, '') as parameter_unit_name, 
+                       COALESCE(pu.short_name, p.unit, '') as parameter_unit,
+                       COALESCE(pu.key, '') as parameter_shortcode,
+                       pr.period, pr.value, pr.currency, 
+                       COALESCE(ru.unit_id, pr.unit_id, '') as result_unit_id, 
+                       COALESCE(ru.value_name, '') as result_unit_name, 
+                       COALESCE(ru.short_name, pr.unit, '') as result_unit,
+                       COALESCE(ru.key, '') as result_shortcode,
+                       pr.yoy_growth
                 {order_clause}
                 """.strip()
             else:
@@ -787,7 +811,19 @@ class CypherGeneratorTool(BaseToolHandler):
                 WHERE c.company_name CONTAINS '{company_name}'
                   AND {param_filter}
                   {period_filter}
-                RETURN DISTINCT c.company_name, p.parameter_name, pr.period, pr.value, pr.currency, pr.yoy_growth
+                OPTIONAL MATCH (p)-[:HAS_UNIT]->(pu:ParameterUnit)
+                OPTIONAL MATCH (pr)-[:HAS_UNIT]->(ru:ResultUnit)
+                RETURN DISTINCT c.company_name, p.parameter_name, 
+                       COALESCE(pu.unit_id, p.unit_id, '') as parameter_unit_id, 
+                       COALESCE(pu.value_name, '') as parameter_unit_name, 
+                       COALESCE(pu.short_name, p.unit, '') as parameter_unit,
+                       COALESCE(pu.key, '') as parameter_shortcode,
+                       pr.period, pr.value, pr.currency, 
+                       COALESCE(ru.unit_id, pr.unit_id, '') as result_unit_id, 
+                       COALESCE(ru.value_name, '') as result_unit_name, 
+                       COALESCE(ru.short_name, pr.unit, '') as result_unit,
+                       COALESCE(ru.key, '') as result_shortcode,
+                       pr.yoy_growth
                 {order_clause}
                 """.strip()
             

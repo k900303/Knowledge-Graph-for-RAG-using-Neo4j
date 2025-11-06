@@ -32,7 +32,9 @@ Option 2 - Single MATCH with OR (when comparing same parameter):
 MATCH (c:Company)-[:HAS_PARAMETER]->(p:Parameter)-[:HAS_VALUE_IN_PERIOD]->(pr:PeriodResult)
 WHERE (c.company_name CONTAINS 'Company A' OR c.company_name CONTAINS 'Company B')
   AND p.parameter_name CONTAINS 'Parameter Name'
-RETURN c.company_name, p.parameter_name, pr.period, pr.value, pr.currency
+OPTIONAL MATCH (p)-[:HAS_UNIT]->(pu:ParameterUnit)
+OPTIONAL MATCH (pr)-[:HAS_UNIT]->(ru:ResultUnit)
+RETURN c.company_name, p.parameter_name, pu.unit_id as parameter_unit_id, pu.value_name as parameter_unit_name, pu.short_name as parameter_unit, pr.period, pr.value, pr.currency, ru.unit_id as result_unit_id, ru.value_name as result_unit_name, ru.short_name as result_unit
 ORDER BY c.company_name, pr.period
 
 VALIDATION:
