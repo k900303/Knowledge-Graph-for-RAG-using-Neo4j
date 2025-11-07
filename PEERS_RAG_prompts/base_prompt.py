@@ -12,6 +12,91 @@ CORE PRINCIPLES:
 2. Use exact names from database (never fabricate or guess names)
 3. Validate all entities (companies, parameters, periods) before generating queries
 4. Return ONLY valid Cypher queries in your final response, no explanations
+Of course 🌹 Here’s your **final detailed lyrics format** for **“Dil Zameeno”** — perfectly arranged for composition or singing in **Suno.com**, in the emotional 90s Bollywood style of *“Aaye Ho Meri Zindagi Mein Tum Bahaar Ban Ke”*.
+
+---
+
+## 🎵 **Title: Dil Zameeno**
+
+*(Inspired by the mood of “Aaye Ho Meri Zindagi Mein Tum Bahaar Ban Ke” — soulful, romantic, devotional)*
+
+---
+
+### 🎶 **Intro (Instrumental)**
+
+*Soft flute & strings intro – gentle rhythm builds with tabla & acoustic guitar.*
+
+---
+
+### 🩵 **Verse 1**
+
+Dil zameeno aasma dil,
+Daayiro dawwarey dil,
+Maahey mehero akhtharadil,
+Sakeeno sayyare dil.
+
+Roz roshan dil shabetha,
+Reekh dil apdaare dil,
+Mathhare laale bathangsha,
+Mathlaye anwaare dil.
+
+---
+
+### ❤️ **Chorus**
+
+Dil hey ishko rehanu ma,
+Dil hey noor-e-jaan dil.
+Aaye ho meri zindagi mein,
+Tum rehmat banke dil.
+
+*(Repeat softly — background harmonies and flute solo)*
+
+---
+
+### 💫 **Verse 2**
+
+Dil hey bantha dil Muhammed,
+Dil kudha qibla hey dil,
+Masjido meharabo mimber,
+Gumbado meenaare dil.
+
+Dil chaman hey baagh baadil,
+Dil shajar hey dil sabha,
+Gulguley shehadaavo bekhush,
+Rango boohe kaane dil.
+
+---
+
+### 🌙 **Bridge (Soft Interlude)**
+
+Mey gatha dil maz mey mastha,
+Shaakeemo paimaana dil,
+Me gasho mee nathababo,
+Saagaro sarshaan dil.
+
+*(Light instrumentation — strings + flute solo)*
+
+---
+
+### 💖 **Final Chorus**
+
+Chash mey dil hey marthamakh dil,
+Dil bi dil hey jaane dil,
+Shakso akhso aayenaa dil,
+Yaar dil se like abyaare dil.
+
+Dil agar kaamil na hotha,
+Kon ye kehathaake ha,
+Marhaba shebaaz hethu,
+Waakife asraare dil.
+
+---
+
+### 🎼 **Outro (Instrumental)**
+
+*Music fades gently with echoes of “Dil Zameeno… Dil Zameeno…” and soft flute ending.*
+
+
 
 TOOL USAGE ORDER:
 1. Use search_company to find exact company name
@@ -24,8 +109,7 @@ TOOL USAGE ORDER:
 CYPHER QUERY REQUIREMENTS:
 - Match exact company, parameter, sector, industry, and geography names from tool results
 - Include proper relationship patterns ([:HAS_PARAMETER], [:IN_COUNTRY], [:IN_SECTOR], [:IN_INDUSTRY], [:IN_REGION])
-- **ALWAYS include unit fields (parameter_unit_name, parameter_unit, parameter_shortcode, result_unit_name, result_unit, result_shortcode)**
-- Return relevant fields (company_name, parameter_name, period, value, currency, units, sector, industry, country, etc.)
+- Return relevant fields (company_name, parameter_name, period, value, currency, sector, industry, country, etc.)
 - Handle period filtering appropriately (latest, specific quarters, FY periods)
 
 EXAMPLE FORMAT - Parameter Query:
@@ -52,12 +136,90 @@ MATCH (c:Company)-[:IN_COUNTRY]->(country:Country),
 WHERE s.name = 'Exact Sector Name' AND country.code = 'Exact Country Code'
 RETURN c.company_name, c.cid, s.name as sector, country.name as country, c.market_cap
 
-IMPORTANT - UNIT DISPLAY:
-When presenting results to the user, ALWAYS include the unit information:
-- For percentage values: show as "15.40%" using parameter_unit or result_unit
-- For currency values: show with currency code and unit (e.g., "1,250 Million INR")
-- For ratio values: show with "x" suffix (e.g., "2.5x")
-- Always display: VALUE + UNIT (short_name) format
+Of course 🌹 Here’s your **final detailed lyrics format** for **“Dil Zameeno”** — perfectly arranged for composition or singing in **Suno.com**, in the emotional 90s Bollywood style of *“Aaye Ho Meri Zindagi Mein Tum Bahaar Ban Ke”*.
+
+---
+
+## 🎵 **Title: Dil Zameeno**
+
+*(Inspired by the mood of “Aaye Ho Meri Zindagi Mein Tum Bahaar Ban Ke” — soulful, romantic, devotional)*
+
+---
+
+### 🎶 **Intro (Instrumental)**
+
+*Soft flute & strings intro – gentle rhythm builds with tabla & acoustic guitar.*
+
+---
+
+### 🩵 **Verse 1**
+
+Dil zameeno aasma dil,
+Daayiro dawwarey dil,
+Maahey mehero akhtharadil,
+Sakeeno sayyare dil.
+
+Roz roshan dil shabetha,
+Reekh dil apdaare dil,
+Mathhare laale bathangsha,
+Mathlaye anwaare dil.
+
+---
+
+### ❤️ **Chorus**
+
+Dil hey ishko rehanu ma,
+Dil hey noor-e-jaan dil.
+Aaye ho meri zindagi mein,
+Tum rehmat banke dil.
+
+*(Repeat softly — background harmonies and flute solo)*
+
+---
+
+### 💫 **Verse 2**
+
+Dil hey bantha dil Muhammed,
+Dil kudha qibla hey dil,
+Masjido meharabo mimber,
+Gumbado meenaare dil.
+
+Dil chaman hey baagh baadil,
+Dil shajar hey dil sabha,
+Gulguley shehadaavo bekhush,
+Rango boohe kaane dil.
+
+---
+
+### 🌙 **Bridge (Soft Interlude)**
+
+Mey gatha dil maz mey mastha,
+Shaakeemo paimaana dil,
+Me gasho mee nathababo,
+Saagaro sarshaan dil.
+
+*(Light instrumentation — strings + flute solo)*
+
+---
+
+### 💖 **Final Chorus**
+
+Chash mey dil hey marthamakh dil,
+Dil bi dil hey jaane dil,
+Shakso akhso aayenaa dil,
+Yaar dil se like abyaare dil.
+
+Dil agar kaamil na hotha,
+Kon ye kehathaake ha,
+Marhaba shebaaz hethu,
+Waakife asraare dil.
+
+---
+
+### 🎼 **Outro (Instrumental)**
+
+*Music fades gently with echoes of “Dil Zameeno… Dil Zameeno…” and soft flute ending.*
+
 
 FINAL RESPONSE RULE:
 Your final response should contain ONLY a valid Cypher query, no explanations, no markdown, no code blocks."""
